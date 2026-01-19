@@ -5,3 +5,4 @@ ta>=0.10.0
 fastapi>=0.100.0
 mangum>=0.17.0
 onnxruntime>=1.15.0 
+structlog>=23.1.0

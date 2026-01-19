@@ -15,17 +15,17 @@ jobs:
         with:
           python-version: '3.10'
 
-      # 1. Install Heavy Deps & Train (On GitHub Runner - Free!)
-      - name: Install Training Dependencies
+      # 1. Install Training Dependencies
+      - name: Install Dependencies
         run: pip install -r requirements-dev.txt
 
+      # 2. Run Training Pipeline
       - name: Train & Convert to ONNX
         run: |
           python src/data_loader.py
           python src/train.py
-          # This produces 'models/model.onnx' (Small file)
 
-      # 2. Login to AWS
+      # 3. Login to AWS
       - name: Login to Amazon ECR
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v1
@@ -34,34 +34,26 @@ jobs:
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           AWS_REGION: us-east-1
 
-      # 3. Build & Push LITE Image (No PyTorch)
+      # 4. Build & Push LITE Image
       - name: Build, Tag, and Push Image
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-          ECR_REPOSITORY: financial-forecaster # You must create this repo in AWS first!
+          ECR_REPOSITORY: financial-forecaster
           IMAGE_TAG: latest
         run: |
           # Create repo if not exists
           aws ecr describe-repositories --repository-names $ECR_REPOSITORY || aws ecr create-repository --repository-name $ECR_REPOSITORY
 
-          # Build Docker image using the LITE Dockerfile
+          # Build and Push
           docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
-          
-          # Push to ECR Private (It will be < 300MB, safe for Free Tier)
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
 
-      # 4. Update Lambda
+      # 5. Update Existing Lambda Function
       - name: Update Lambda Function
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
           ECR_REPOSITORY: financial-forecaster
           IMAGE_TAG: latest
         run: |
-          # Create function if not exists, else update
-          aws lambda get-function --function-name financial-forecaster || \
-            aws lambda create-function --function-name financial-forecaster \
-            --package-type Image \
-            --code ImageUri=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG \
-            --role arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/service-role/your-lambda-role
-
+          # Only update the code. We assume you created the function 'financial-forecaster' in AWS Console.
           aws lambda update-function-code --function-name financial-forecaster --image-uri $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
