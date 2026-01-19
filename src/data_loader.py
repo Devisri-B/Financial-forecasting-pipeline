@@ -5,9 +5,6 @@ import hydra
 from omegaconf import DictConfig
 import os
 
-api_key = os.environ.get("STOCK_API_KEY") 
-if not api_key:
-    raise ValueError("API Key not found! Check Lambda Configuration.")
 
 @hydra.main(config_path="../config", config_name="main", version_base=None)
 def load_data(cfg: DictConfig):
