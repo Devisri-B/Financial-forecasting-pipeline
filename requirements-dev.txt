@@ -1,0 +1,7 @@
+-r requirements.txt
+pytest>=7.0.0
+black                # Code formatter
+flake8               # Linter
+mlflow>=2.3.0        # Experiment tracking
+evidently>=0.4.0     # Drift detection
+dvc[s3]>=3.0.0       # Data versioning

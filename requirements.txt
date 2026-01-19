@@ -1,0 +1,10 @@
+torch>=2.0.0
+numpy>=1.24.0
+pandas>=2.0.0
+scikit-learn>=1.2.0
+ta>=0.10.0           # Technical Analysis library
+hydra-core>=1.3.0    # Configuration management
+pydantic>=2.0.0      # Data validation
+structlog>=23.1.0    # JSON logging for production
+onnx>=1.14.0
+onnxruntime>=1.15.0
