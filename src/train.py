@@ -34,16 +34,17 @@ def train_pipeline(cfg: DictConfig):
         os.makedirs(os.path.dirname(cfg.data.reference_path), exist_ok=True)
         df_processed.to_csv(cfg.data.reference_path)
 
+        # Save processed data
+        os.makedirs(os.path.dirname(cfg.data.processed_path), exist_ok=True)
+        df_processed.to_csv(cfg.data.processed_path)
+        
         # 2. Scale Data
         scaler = StandardScaler()
         data_scaled = scaler.fit_transform(df_processed)
         
-        # --- FIX STARTS HERE ---
         # Create the 'models' directory explicitly before saving
         os.makedirs("models", exist_ok=True)
-        # --- FIX ENDS HERE ---
-        
-        joblib.dump(scaler, "models/scaler.pkl") 
+        joblib.dump(scaler, "models/scaler.pkl")
         
         # 3. Create Sequences
         X, y = create_sequences(data_scaled, cfg.data.window_size)
