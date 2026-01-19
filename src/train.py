@@ -6,8 +6,8 @@ import numpy as np
 import pandas as pd
 import mlflow
 import os
-from src.features import FeatureEngineer
-from src.model import StockPredictor
+from features import FeatureEngineer
+from model import StockPredictor
 from sklearn.preprocessing import StandardScaler
 import joblib
 

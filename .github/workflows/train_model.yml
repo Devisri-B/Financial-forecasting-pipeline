@@ -1,0 +1,56 @@
+name: MLOps Pipeline
+
+on:
+  push:
+    branches: [ main ]
+  schedule:
+    - cron: '0 0 * * 0' # Weekly run
+
+jobs:
+  train-and-evaluate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Install Dependencies
+        run: |
+          pip install -r requirements-dev.txt
+
+      - name: Load Data
+        run: python src/data_loader.py
+
+      - name: Train Model
+        run: python src/train.py
+
+      - name: Check for Drift
+        run: python src/evaluate.py
+
+      - name: Login to Amazon ECR
+        if: success()
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v1
+
+      # Note: You need to set AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY in GitHub Secrets
+      - name: Build, tag, and push image to Amazon ECR
+        if: success()
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          ECR_REPOSITORY: financial-forecasting
+          IMAGE_TAG: latest
+        run: |
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+          
+      - name: Update Lambda Function
+        if: success()
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          ECR_REPOSITORY: financial-forecasting
+          IMAGE_TAG: latest
+        run: |
+          aws lambda update-function-code --function-name financial-forecaster --image-uri $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
