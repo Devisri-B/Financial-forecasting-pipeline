@@ -1,6 +1,6 @@
 import pandas as pd
+import numpy as np
 import ta
-from typing import Tuple
 import structlog
 
 logger = structlog.get_logger()
@@ -10,34 +10,36 @@ class FeatureEngineer:
         self.use_technical_indicators = use_technical_indicators
 
     def transform(self, df: pd.DataFrame) -> pd.DataFrame:
-        """
-        Generates technical indicators: RSI, MACD, Bollinger Bands.
-        """
         logger.info("Starting feature engineering", shape=df.shape)
         
         df = df.copy()
         
-        # 1. Log Returns (Better stationarity than raw prices)
-        df['log_ret'] = df['Close'].pct_change().apply(lambda x: np.log(1 + x))
+        # Ensure 'Close' is present
+        if 'Close' not in df.columns:
+            # Handle yfinance multi-index case if necessary
+            if isinstance(df.columns, pd.MultiIndex):
+                df.columns = df.columns.get_level_values(0)
+            
+        # 1. Log Returns (Target Stationarity)
+        # We predict the next day's return, so we shift back for the target
+        df['log_ret'] = np.log(df['Close'] / df['Close'].shift(1))
         
         if self.use_technical_indicators:
-            # RSI (Momentum)
+            # RSI
             df['rsi'] = ta.momentum.rsi(df['Close'], window=14)
             
-            # MACD (Trend)
+            # MACD
             macd = ta.trend.MACD(df['Close'])
             df['macd'] = macd.macd()
-            df['macd_diff'] = macd.macd_diff()
             
-            # Bollinger Bands (Volatility)
+            # Bollinger Bands
             bollinger = ta.volatility.BollingerBands(df['Close'])
-            df['bb_high'] = bollinger.bollinger_hband()
-            df['bb_low'] = bollinger.bollinger_lband()
+            df['bb_width'] = bollinger.bollinger_wband()
             
-            # Volume Moving Average
-            df['vol_ma'] = df['Volume'].rolling(window=20).mean()
+            # Simple Moving Average
+            df['sma_20'] = ta.trend.sma_indicator(df['Close'], window=20)
 
-        # Drop NaNs created by rolling windows
+        # Drop NaNs created by rolling windows and shifting
         df.dropna(inplace=True)
         
         logger.info("Feature engineering complete", final_shape=df.shape)
