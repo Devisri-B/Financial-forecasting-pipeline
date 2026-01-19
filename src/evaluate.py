@@ -2,7 +2,7 @@ import pandas as pd
 import hydra
 from omegaconf import DictConfig
 from evidently.report import Report
-from evidently.metric_preset import DataDriftPreset
+from evidently.metrics import DataDriftPreset
 import sys
 import os
 
