@@ -15,7 +15,7 @@ def create_sequences(data, seq_length):
     xs, ys = [], []
     for i in range(len(data) - seq_length):
         x = data[i:(i + seq_length)]
-        y = data[i + seq_length][0] # Predict the first feature (Log Return)
+        y = data[i + seq_length][0] 
         xs.append(x)
         ys.append(y)
     return np.array(xs), np.array(ys)
@@ -30,14 +30,20 @@ def train_pipeline(cfg: DictConfig):
         engineer = FeatureEngineer(cfg.features.use_technical_indicators)
         df_processed = engineer.transform(df)
         
-        # Save reference data for Drift Detection later
+        # Save reference data
         os.makedirs(os.path.dirname(cfg.data.reference_path), exist_ok=True)
         df_processed.to_csv(cfg.data.reference_path)
 
         # 2. Scale Data
         scaler = StandardScaler()
         data_scaled = scaler.fit_transform(df_processed)
-        joblib.dump(scaler, "models/scaler.pkl") # Save scaler for inference
+        
+        # --- FIX STARTS HERE ---
+        # Create the 'models' directory explicitly before saving
+        os.makedirs("models", exist_ok=True)
+        # --- FIX ENDS HERE ---
+        
+        joblib.dump(scaler, "models/scaler.pkl") 
         
         # 3. Create Sequences
         X, y = create_sequences(data_scaled, cfg.data.window_size)
@@ -79,15 +85,15 @@ def train_pipeline(cfg: DictConfig):
             
         mlflow.log_metric("test_mse", test_loss.item())
         
-        # Save Conformal Prediction Score (95% Quantile)
+        # Save Conformal Prediction Score
         q_95 = np.quantile(residuals, 0.95)
+        # Directory already created above, but safe to keep this
         os.makedirs(os.path.dirname(cfg.deployment.calibration_path), exist_ok=True)
         with open(cfg.deployment.calibration_path, "w") as f:
             f.write(str(q_95))
             
         # 7. Export to ONNX
         dummy_input = torch.randn(1, cfg.data.window_size, input_dim)
-        os.makedirs(os.path.dirname(cfg.deployment.onnx_path), exist_ok=True)
         torch.onnx.export(
             model, dummy_input, cfg.deployment.onnx_path,
             input_names=['input'], output_names=['output'],
