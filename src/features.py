@@ -20,6 +20,11 @@ class FeatureEngineer:
             if isinstance(df.columns, pd.MultiIndex):
                 df.columns = df.columns.get_level_values(0)
             
+        cols_to_fix = ['Open', 'High', 'Low', 'Close', 'Volume']
+        for col in cols_to_fix:
+            if col in df.columns:
+                df[col] = pd.to_numeric(df[col], errors='coerce')
+        
         # 1. Log Returns (Target Stationarity)
         # We predict the next day's return, so we shift back for the target
         df['log_ret'] = np.log(df['Close'] / df['Close'].shift(1))
