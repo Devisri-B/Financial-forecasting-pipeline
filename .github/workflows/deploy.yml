@@ -42,6 +42,8 @@ jobs:
           IMAGE_TAG: latest
           AWS_DEFAULT_REGION: us-east-1
           AWS_REGION: us-east-1
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         run: |
           # Create repo if not exists
           aws ecr describe-repositories --repository-names $ECR_REPOSITORY || aws ecr create-repository --repository-name $ECR_REPOSITORY
@@ -58,6 +60,8 @@ jobs:
           IMAGE_TAG: latest
           AWS_DEFAULT_REGION: us-east-1
           AWS_REGION: us-east-1
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         run: |
           # Only update the code. We assume you created the function 'financial-forecaster' in AWS Console.
           aws lambda update-function-code --function-name financial-forecaster --image-uri $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
