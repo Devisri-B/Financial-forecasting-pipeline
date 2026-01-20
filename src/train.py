@@ -99,6 +99,7 @@ def train_pipeline(cfg: DictConfig):
             model, dummy_input, cfg.deployment.onnx_path,
             input_names=['input'], output_names=['output'],
             dynamic_axes={'input': {0: 'batch_size'}, 'output': {0: 'batch_size'}}
+            opset_version=14
         )
         print("Training complete. Model exported.")
 
