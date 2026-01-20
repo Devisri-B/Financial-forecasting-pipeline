@@ -4,5 +4,6 @@ scikit-learn>=1.2.0
 ta>=0.10.0
 fastapi>=0.100.0
 mangum>=0.17.0
-onnxruntime>=1.15.0 
+onnxruntime>=1.18.0 
 structlog>=23.1.0
+joblib>=1.2.0
