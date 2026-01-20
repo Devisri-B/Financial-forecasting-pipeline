@@ -20,3 +20,5 @@ COPY models/calibration_score.txt ${LAMBDA_TASK_ROOT}/models/
 
 # Set the CMD to handler
 CMD [ "src.app.handler" ]
+
+# Force Rebuild: v2
