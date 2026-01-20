@@ -6,7 +6,8 @@ COPY requirements.txt ${LAMBDA_TASK_ROOT}
 
 # Install ONNX Runtime (CPU version is small)
 # use --no-cache-dir to keep the image slim
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --upgrade pip && \
+    pip install --no-cache-dir -r requirements.txt
 
 # Copy the Inference Code (NOT the training code)
 COPY src/app.py ${LAMBDA_TASK_ROOT}/src/
