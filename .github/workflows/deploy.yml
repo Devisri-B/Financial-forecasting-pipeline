@@ -7,9 +7,6 @@ on:
       - 'src/**'
       - 'requirements*.txt'
       - '.github/workflows/**'
-    paths-ignore:
-      - 'README.md'
-      - '*.md'
 
 jobs:
   deploy:
