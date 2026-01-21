@@ -1,6 +1,6 @@
 """
 Multi-ticker training with ensemble methods.
-Now that we have sufficient data (11K samples), ensemble can work properly.
+Uses an LSTM base model and trains an ensemble on top of it.
 """
 
 import hydra
@@ -15,10 +15,10 @@ import time
 import matplotlib.pyplot as plt
 from features import FeatureEngineer
 from model import StockPredictor
-from ensemble import EnsemblePredictor
+from train_ensemble_single import EnsemblePredictor
 from sklearn.preprocessing import StandardScaler
 import joblib
-from train import create_sequences, EarlyStopping, set_seeds
+from train_single_ticker import create_sequences, EarlyStopping, set_seeds
 from hydra.utils import get_original_cwd
 
 @hydra.main(config_path="../config", config_name="main", version_base=None)
