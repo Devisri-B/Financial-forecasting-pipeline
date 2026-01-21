@@ -28,11 +28,29 @@
 | **MAPE** | 4.05% | **1.64%** | 59.5% better |
 | **Directional Accuracy** | 52.1% | **61.8%** | +9.7% |
 
-**Interpretation:**
-- **R² = 0.9986**: Model explains 99.86% of price variance
-- **MAPE = 1.64%**: Average prediction error is only 1.64% of actual price
-- **Directional Accuracy = 61.8%**: Predicts correct price direction (up/down) 61.8% of the time
-- **Production readiness**: All metrics exceed industry standards for financial forecasting
+**⚠️ Critical Note on High R² (0.9986):**
+
+This R² value likely reflects **look-ahead bias / data leakage** rather than true model performance. In the ML community, R² >0.99 is a red flag requiring investigation. Root causes identified:
+
+1. **Scaler fitted on entire dataset** - StandardScaler sees min/max from test data before train/test split
+2. **Technical indicators computed globally** - RSI, MACD, Bollinger Bands use full dataset context, leaking future information
+3. **No proper walk-forward validation** - Financial forecasting requires time-series aware CV (not random splits)
+
+**What This Means:** 
+- Current metrics are *optimistic* and won't generalize to truly unseen future data
+- Model likely memorized scaling statistics and indicator patterns rather than learning predictive relationships
+- This is a **pedagogical example** of how seemingly perfect metrics can mask fundamental data leakage issues
+
+**Next Steps for Production Use:**
+- ✅ **Implement proper fix**: Fit scaler on training data only, apply to val/test
+- ✅ **Use walk-forward validation**: Train on expanding window, test on held-out future data
+- ✅ **Recompute technical indicators** in real-time only, not on historical data
+- ✅ **Expect realistic R²** in 0.5-0.7 range for stock price forecasting (if leak-free)
+
+**Interpretation (if leak were fixed):**
+- **R² = 0.9986**: Model explains 99.86% of price variance *(currently inflated)*
+- **MAPE = 1.64%**: Average prediction error is only 1.64% of actual price *(currently inflated)*
+- **Directional Accuracy = 61.8%**: Predicts correct price direction (up/down) 61.8% of the time *(currently optimistic)*
 
 ---
 
