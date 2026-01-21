@@ -3,6 +3,13 @@ name: Deploy to Lambda
 on:
   push:
     branches: [ main ]
+    paths:
+      - 'src/**'
+      - 'requirements*.txt'
+      - '.github/workflows/**'
+    paths-ignore:
+      - 'README.md'
+      - '*.md'
 
 jobs:
   deploy:

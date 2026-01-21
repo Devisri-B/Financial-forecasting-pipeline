@@ -180,46 +180,89 @@ def train_ensemble_multi_ticker(cfg: DictConfig):
         improvement = ((ensemble_r2 - lstm_r2.item()) / abs(lstm_r2.item() + 1e-6)) * 100
         print(f"Improvement: {improvement:+.1f}%")
         
+        # Calculate additional metrics
+        from sklearn.metrics import mean_absolute_error
+        
+        # LSTM metrics
+        lstm_mae = mean_absolute_error(y_test, lstm_pred.cpu().numpy())
+        lstm_rmse = np.sqrt(lstm_mse.item())
+        lstm_mape = np.mean(np.abs((y_test - lstm_pred.cpu().numpy()) / (y_test + 1e-8))) * 100
+        
+        # Ensemble metrics
+        ensemble_mae = mean_absolute_error(y_test, ensemble_pred)
+        ensemble_rmse = np.sqrt(ensemble_mse)
+        ensemble_mape = np.mean(np.abs((y_test - ensemble_pred) / (y_test + 1e-8))) * 100
+        
+        # Directional accuracy (% correct up/down predictions)
+        # Flatten predictions to 1D
+        lstm_pred_flat = lstm_pred.cpu().numpy().flatten()
+        ensemble_pred_flat = ensemble_pred.flatten()
+        y_test_flat = y_test.flatten()
+        
+        # Calculate direction changes (ignoring first sample)
+        y_test_direction = np.diff(y_test_flat) > 0
+        lstm_direction = np.diff(lstm_pred_flat) > 0
+        ensemble_direction = np.diff(ensemble_pred_flat) > 0
+        
+        lstm_dir_accuracy = np.mean(y_test_direction == lstm_direction) * 100
+        ensemble_dir_accuracy = np.mean(y_test_direction == ensemble_direction) * 100
+        
         # Log metrics
         mlflow.log_metrics({
             "lstm_test_r2": lstm_r2.item(),
             "lstm_test_mse": lstm_mse.item(),
+            "lstm_test_rmse": lstm_rmse,
+            "lstm_test_mae": lstm_mae,
+            "lstm_test_mape": lstm_mape,
+            "lstm_directional_accuracy": lstm_dir_accuracy,
             "ensemble_test_r2": ensemble_r2,
             "ensemble_test_mse": ensemble_mse,
+            "ensemble_test_rmse": ensemble_rmse,
+            "ensemble_test_mae": ensemble_mae,
+            "ensemble_test_mape": ensemble_mape,
+            "ensemble_directional_accuracy": ensemble_dir_accuracy,
             "ensemble_improvement_pct": improvement,
         })
         
         # Save artifacts
-        artifacts_dir = os.path.join(get_original_cwd(), "outputs/ensemble_multi_ticker")
-        os.makedirs(artifacts_dir, exist_ok=True)
-        
-        # Plot comparison
-        plt.figure(figsize=(14, 6))
-        plt.subplot(1, 2, 1)
-        plt.plot(train_losses, label='Train Loss', alpha=0.7)
-        plt.plot(val_losses, label='Val Loss', alpha=0.7)
-        plt.xlabel('Epoch')
-        plt.ylabel('MSE Loss')
-        plt.legend()
-        plt.title('Training History')
-        plt.grid(True, alpha=0.3)
-        
-        plt.subplot(1, 2, 2)
-        test_samples = min(200, len(y_test))
-        plt.plot(y_test[:test_samples], label='Actual', linewidth=2, alpha=0.8)
-        plt.plot(lstm_pred.cpu().numpy()[:test_samples], label=f'LSTM (R²={lstm_r2.item():.3f})', linestyle='--', alpha=0.7)
-        plt.plot(ensemble_pred[:test_samples], label=f'Ensemble (R²={ensemble_r2:.3f})', linestyle=':', alpha=0.7, linewidth=2)
-        plt.xlabel('Sample')
-        plt.ylabel('Normalized Price')
-        plt.legend()
-        plt.title('Predictions Comparison (First 200 test samples)')
-        plt.grid(True, alpha=0.3)
-        
-        plot_path = os.path.join(artifacts_dir, "ensemble_results.png")
-        plt.savefig(plot_path, dpi=150, bbox_inches='tight')
-        plt.close()
-        
-        mlflow.log_artifact(plot_path)
+        try:
+            artifacts_dir = os.path.join(get_original_cwd(), "outputs/ensemble_multi_ticker")
+            os.makedirs(artifacts_dir, exist_ok=True)
+            
+            # Plot comparison
+            plt.figure(figsize=(14, 6))
+            plt.subplot(1, 2, 1)
+            plt.plot(train_losses, label='Train Loss', alpha=0.7)
+            plt.plot(val_losses, label='Val Loss', alpha=0.7)
+            plt.xlabel('Epoch')
+            plt.ylabel('MSE Loss')
+            plt.legend()
+            plt.title('Training History')
+            plt.grid(True, alpha=0.3)
+            
+            plt.subplot(1, 2, 2)
+            test_samples = min(200, len(y_test))
+            plt.plot(y_test[:test_samples], label='Actual', linewidth=2, alpha=0.8)
+            plt.plot(lstm_pred.cpu().numpy()[:test_samples], label=f'LSTM (R²={lstm_r2.item():.3f})', linestyle='--', alpha=0.7)
+            plt.plot(ensemble_pred[:test_samples], label=f'Ensemble (R²={ensemble_r2:.3f})', linestyle=':', alpha=0.7, linewidth=2)
+            plt.xlabel('Sample')
+            plt.ylabel('Normalized Price')
+            plt.legend()
+            plt.title('Predictions Comparison (First 200 test samples)')
+            plt.grid(True, alpha=0.3)
+            
+            plot_path = os.path.join(artifacts_dir, "ensemble_results.png")
+            plt.savefig(plot_path, dpi=150, bbox_inches='tight')
+            plt.close()
+            
+            # Log artifact safely
+            try:
+                mlflow.log_artifact(plot_path)
+            except Exception as e:
+                print(f"Warning: Could not log artifact: {e}")
+        except Exception as e:
+            print(f"Warning: Could not save artifacts: {e}")
+            plt.close()
         
         # Save models
         torch.save(model.state_dict(), os.path.join(get_original_cwd(), "models/lstm_multi_ticker.pth"))
@@ -228,8 +271,29 @@ def train_ensemble_multi_ticker(cfg: DictConfig):
         mlflow.log_metric("runtime_sec", runtime)
         
         print(f"\n Training complete in {runtime:.1f}s")
-        print(f"   LSTM: R²={lstm_r2.item():.4f}")
-        print(f"   Ensemble: R²={ensemble_r2:.4f} ({improvement:+.1f}%)")
+        print(f"\n=== LSTM Metrics ===")
+        print(f"  R²: {lstm_r2.item():.4f}")
+        print(f"  RMSE: {lstm_rmse:.4f}")
+        print(f"  MAE: {lstm_mae:.4f}")
+        print(f"  MAPE: {lstm_mape:.2f}%")
+        print(f"  Directional Accuracy: {lstm_dir_accuracy:.2f}%")
+        
+        print(f"\n=== Ensemble Metrics ===")
+        print(f"  R²: {ensemble_r2:.4f}")
+        print(f"  RMSE: {ensemble_rmse:.4f}")
+        print(f"  MAE: {ensemble_mae:.4f}")
+        print(f"  MAPE: {ensemble_mape:.2f}%")
+        print(f"  Directional Accuracy: {ensemble_dir_accuracy:.2f}%")
+        print(f"  Improvement: {improvement:+.1f}%")
+        
+        # Save calibration score
+        calibration_file = os.path.join(get_original_cwd(), "models/calibration_score.txt")
+        with open(calibration_file, 'w') as f:
+            f.write(f"RMSE: {ensemble_rmse:.4f}\n")
+            f.write(f"MAE: {ensemble_mae:.4f}\n")
+            f.write(f"MAPE: {ensemble_mape:.2f}%\n")
+            f.write(f"R²: {ensemble_r2:.4f}\n")
+            f.write(f"Directional Accuracy: {ensemble_dir_accuracy:.2f}%\n")
 
 if __name__ == "__main__":
     train_ensemble_multi_ticker()
