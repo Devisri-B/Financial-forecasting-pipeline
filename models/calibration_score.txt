@@ -1,5 +1,5 @@
-RMSE: 0.0197
-MAE: 0.0134
-MAPE: 16.45%
-R²: 0.9986
-Directional Accuracy: 61.81%
+RMSE: 2.6813
+MAE: 1.8415
+MAPE: 0.59%
+R²: 0.9985
+Directional Accuracy: 61.69%

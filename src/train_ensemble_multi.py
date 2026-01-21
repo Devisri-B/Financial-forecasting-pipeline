@@ -60,28 +60,35 @@ def train_ensemble_multi_ticker(cfg: DictConfig):
         all_features = pd.concat(processed_data, ignore_index=True)
         print(f"\n Total: {len(all_features)} samples after feature engineering")
         
-        # Prepare data
+        # Prepare data (NO scaling yet - avoid look-ahead bias)
         feature_cols = [col for col in all_features.columns if col != 'Close']
         data = all_features[feature_cols + ['Close']].values
         
-        scaler = StandardScaler()
-        data_scaled = scaler.fit_transform(data)
-        
-        os.makedirs(os.path.join(get_original_cwd(), "models"), exist_ok=True)
-        joblib.dump(scaler, os.path.join(get_original_cwd(), "models/scaler_ensemble_multi.pkl"))
-        
-        # Create sequences
-        X, y = create_sequences(data_scaled, cfg.data.window_size)
+        # Create sequences BEFORE scaling/splitting
+        X, y = create_sequences(data, cfg.data.window_size)
         print(f"Sequences: X={X.shape}, y={y.shape}")
         
-        # Split: 70% train, 15% val, 15% test
+        # Split: 70% train, 15% val, 15% test (BEFORE scaling)
         n = len(X)
         train_idx = int(n * 0.7)
         val_idx = int(n * 0.85)
         
-        X_train, y_train = X[:train_idx], y[:train_idx]
-        X_val, y_val = X[train_idx:val_idx], y[train_idx:val_idx]
-        X_test, y_test = X[val_idx:], y[val_idx:]
+        X_train_raw, y_train = X[:train_idx], y[:train_idx]
+        X_val_raw, y_val = X[train_idx:val_idx], y[train_idx:val_idx]
+        X_test_raw, y_test = X[val_idx:], y[val_idx:]
+        
+        # Fit scaler ONLY on training data to prevent look-ahead bias
+        X_train_2d = X_train_raw.reshape(-1, X_train_raw.shape[-1])
+        scaler = StandardScaler()
+        scaler.fit(X_train_2d)
+        
+        # Scale all sets using training statistics
+        X_train = scaler.transform(X_train_2d).reshape(X_train_raw.shape)
+        X_val = scaler.transform(X_val_raw.reshape(-1, X_val_raw.shape[-1])).reshape(X_val_raw.shape)
+        X_test = scaler.transform(X_test_raw.reshape(-1, X_test_raw.shape[-1])).reshape(X_test_raw.shape)
+        
+        os.makedirs(os.path.join(get_original_cwd(), "models"), exist_ok=True)
+        joblib.dump(scaler, os.path.join(get_original_cwd(), "models/scaler_ensemble_multi.pkl"))
         
         print(f"Split: Train={len(X_train)} | Val={len(X_val)} | Test={len(X_test)}")
         
