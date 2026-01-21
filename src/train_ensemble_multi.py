@@ -173,29 +173,69 @@ def train_ensemble_multi_ticker(cfg: DictConfig):
         ensemble = EnsemblePredictor(lstm_model=model, weights=[0.5, 0.3, 0.2])
         ensemble.fit(X_train, y_train, X_val, y_val)
         
+        # Get predictions on all sets to detect overfitting
+        with torch.no_grad():
+            lstm_train_pred = model(X_train_t)
+            lstm_val_pred = model(X_val_t)
+        
+        lstm_train_pred_np = lstm_train_pred.cpu().numpy()
+        lstm_val_pred_np = lstm_val_pred.cpu().numpy()
+        
+        ensemble_train_pred = ensemble.predict(X_train)
+        ensemble_val_pred = ensemble.predict(X_val)
+        ensemble_test_pred = ensemble.predict(X_test)
+        
+        # Calculate R² for all sets to detect overfitting
+        def calc_r2(y_true, y_pred):
+            y_mean = np.mean(y_true)
+            ss_res = np.sum((y_true - y_pred) ** 2)
+            ss_tot = np.sum((y_true - y_mean) ** 2)
+            return 1 - (ss_res / ss_tot)
+        
+        # LSTM R² on all sets
+        lstm_train_r2 = calc_r2(y_train, lstm_train_pred_np)
+        lstm_val_r2 = calc_r2(y_val, lstm_val_pred_np)
+        lstm_test_r2 = calc_r2(y_test, lstm_pred.cpu().numpy())
+        
+        # Ensemble R² on all sets
+        ensemble_train_r2 = calc_r2(y_train, ensemble_train_pred)
+        ensemble_val_r2 = calc_r2(y_val, ensemble_val_pred)
+        ensemble_test_r2 = calc_r2(y_test, ensemble_test_pred)
+        
+        print(f"\n=== LSTM R² by Set (Overfitting Check) ===")
+        print(f"  Train: {lstm_train_r2:.4f}")
+        print(f"  Val:   {lstm_val_r2:.4f}")
+        print(f"  Test:  {lstm_test_r2:.4f}")
+        print(f"  Overfitting indicator: Val/Test gap = {abs(lstm_val_r2 - lstm_test_r2):.4f}")
+        if abs(lstm_val_r2 - lstm_test_r2) > 0.05:
+            print(f"  ⚠️  HIGH OVERFITTING: Val/Test gap > 0.05")
+        
+        print(f"\n=== Ensemble R² by Set (Overfitting Check) ===")
+        print(f"  Train: {ensemble_train_r2:.4f}")
+        print(f"  Val:   {ensemble_val_r2:.4f}")
+        print(f"  Test:  {ensemble_test_r2:.4f}")
+        print(f"  Overfitting indicator: Val/Test gap = {abs(ensemble_val_r2 - ensemble_test_r2):.4f}")
+        if abs(ensemble_val_r2 - ensemble_test_r2) > 0.05:
+            print(f"  ⚠️  HIGH OVERFITTING: Val/Test gap > 0.05")
+        
         # Ensemble predictions on test set
-        ensemble_pred = ensemble.predict(X_test)
+        ensemble_pred = ensemble_test_pred
         ensemble_mse = np.mean((y_test - ensemble_pred) ** 2)
         
-        y_mean_np = np.mean(y_test)
-        ensemble_ss_res = np.sum((y_test - ensemble_pred) ** 2)
-        ensemble_ss_tot = np.sum((y_test - y_mean_np) ** 2)
-        ensemble_r2 = 1 - (ensemble_ss_res / ensemble_ss_tot)
+        print(f"Ensemble Results: R²={ensemble_test_r2:.4f}, MSE={ensemble_mse:.4f}")
         
-        print(f"Ensemble Results: R²={ensemble_r2:.4f}, MSE={ensemble_mse:.4f}")
-        
-        improvement = ((ensemble_r2 - lstm_r2.item()) / abs(lstm_r2.item() + 1e-6)) * 100
+        improvement = ((ensemble_test_r2 - lstm_test_r2) / abs(lstm_test_r2 + 1e-6)) * 100
         print(f"Improvement: {improvement:+.1f}%")
         
         # Calculate additional metrics
         from sklearn.metrics import mean_absolute_error
         
-        # LSTM metrics
+        # LSTM metrics (test set)
         lstm_mae = mean_absolute_error(y_test, lstm_pred.cpu().numpy())
         lstm_rmse = np.sqrt(lstm_mse.item())
         lstm_mape = np.mean(np.abs((y_test - lstm_pred.cpu().numpy()) / (y_test + 1e-8))) * 100
         
-        # Ensemble metrics
+        # Ensemble metrics (test set)
         ensemble_mae = mean_absolute_error(y_test, ensemble_pred)
         ensemble_rmse = np.sqrt(ensemble_mse)
         ensemble_mape = np.mean(np.abs((y_test - ensemble_pred) / (y_test + 1e-8))) * 100
@@ -216,19 +256,25 @@ def train_ensemble_multi_ticker(cfg: DictConfig):
         
         # Log metrics
         mlflow.log_metrics({
-            "lstm_test_r2": lstm_r2.item(),
+            "lstm_train_r2": lstm_train_r2,
+            "lstm_val_r2": lstm_val_r2,
+            "lstm_test_r2": lstm_test_r2,
             "lstm_test_mse": lstm_mse.item(),
             "lstm_test_rmse": lstm_rmse,
             "lstm_test_mae": lstm_mae,
             "lstm_test_mape": lstm_mape,
             "lstm_directional_accuracy": lstm_dir_accuracy,
-            "ensemble_test_r2": ensemble_r2,
+            "ensemble_train_r2": ensemble_train_r2,
+            "ensemble_val_r2": ensemble_val_r2,
+            "ensemble_test_r2": ensemble_test_r2,
             "ensemble_test_mse": ensemble_mse,
             "ensemble_test_rmse": ensemble_rmse,
             "ensemble_test_mae": ensemble_mae,
             "ensemble_test_mape": ensemble_mape,
             "ensemble_directional_accuracy": ensemble_dir_accuracy,
             "ensemble_improvement_pct": improvement,
+            "overfitting_indicator_lstm": abs(lstm_val_r2 - lstm_test_r2),
+            "overfitting_indicator_ensemble": abs(ensemble_val_r2 - ensemble_test_r2),
         })
         
         # Save artifacts
@@ -278,29 +324,39 @@ def train_ensemble_multi_ticker(cfg: DictConfig):
         mlflow.log_metric("runtime_sec", runtime)
         
         print(f"\n Training complete in {runtime:.1f}s")
-        print(f"\n=== LSTM Metrics ===")
-        print(f"  R²: {lstm_r2.item():.4f}")
-        print(f"  RMSE: {lstm_rmse:.4f}")
-        print(f"  MAE: {lstm_mae:.4f}")
-        print(f"  MAPE: {lstm_mape:.2f}%")
-        print(f"  Directional Accuracy: {lstm_dir_accuracy:.2f}%")
+        print(f"\n=== LSTM Metrics (by set) ===")
+        print(f"  Train R²: {lstm_train_r2:.4f}")
+        print(f"  Val R²:   {lstm_val_r2:.4f}")
+        print(f"  Test R²:  {lstm_test_r2:.4f}")
+        print(f"  Test RMSE: {lstm_rmse:.4f}")
+        print(f"  Test MAE: {lstm_mae:.4f}")
+        print(f"  Test MAPE: {lstm_mape:.2f}%")
+        print(f"  Test Directional Accuracy: {lstm_dir_accuracy:.2f}%")
         
-        print(f"\n=== Ensemble Metrics ===")
-        print(f"  R²: {ensemble_r2:.4f}")
-        print(f"  RMSE: {ensemble_rmse:.4f}")
-        print(f"  MAE: {ensemble_mae:.4f}")
-        print(f"  MAPE: {ensemble_mape:.2f}%")
-        print(f"  Directional Accuracy: {ensemble_dir_accuracy:.2f}%")
-        print(f"  Improvement: {improvement:+.1f}%")
+        print(f"\n=== Ensemble Metrics (by set) ===")
+        print(f"  Train R²: {ensemble_train_r2:.4f}")
+        print(f"  Val R²:   {ensemble_val_r2:.4f}")
+        print(f"  Test R²:  {ensemble_test_r2:.4f}")
+        print(f"  Test RMSE: {ensemble_rmse:.4f}")
+        print(f"  Test MAE: {ensemble_mae:.4f}")
+        print(f"  Test MAPE: {ensemble_mape:.2f}%")
+        print(f"  Test Directional Accuracy: {ensemble_dir_accuracy:.2f}%")
+        print(f"  Improvement vs LSTM: {improvement:+.1f}%")
         
         # Save calibration score
         calibration_file = os.path.join(get_original_cwd(), "models/calibration_score.txt")
         with open(calibration_file, 'w') as f:
+            f.write(f"=== Ensemble Test Metrics ===\n")
             f.write(f"RMSE: {ensemble_rmse:.4f}\n")
             f.write(f"MAE: {ensemble_mae:.4f}\n")
             f.write(f"MAPE: {ensemble_mape:.2f}%\n")
-            f.write(f"R²: {ensemble_r2:.4f}\n")
+            f.write(f"R²: {ensemble_test_r2:.4f}\n")
             f.write(f"Directional Accuracy: {ensemble_dir_accuracy:.2f}%\n")
+            f.write(f"\n=== Overfitting Check ===\n")
+            f.write(f"Train R²: {ensemble_train_r2:.4f}\n")
+            f.write(f"Val R²:   {ensemble_val_r2:.4f}\n")
+            f.write(f"Test R²:  {ensemble_test_r2:.4f}\n")
+            f.write(f"Val/Test gap: {abs(ensemble_val_r2 - ensemble_test_r2):.6f}\n")
 
 if __name__ == "__main__":
     train_ensemble_multi_ticker()
