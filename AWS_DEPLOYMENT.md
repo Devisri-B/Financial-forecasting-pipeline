@@ -262,8 +262,7 @@ ImportError: NumPy version mismatch
 
 1. **Keep Lambda memory at 512MB** - Too low causes timeouts, too high wastes money
 2. **Monitor via CloudWatch** - Set alarms for unexpected costs
-3. **Disable API if not used** - Delete API Gateway to avoid unexpected charges
-4. **Use S3 for model storage** - S3 is cheaper than Lambda ephemeral storage
+3. **Disable Lambda if not used** - Stop function to avoid unexpected charges
 
 ## Production Considerations
 
@@ -287,53 +286,42 @@ def require_api_key(event):
 - **X-Ray**: Trace requests for debugging
 - **Alarms**: Alert on high error rates
 
-### Deployment Best Practices:
-1. Use **SAM (Serverless Application Model)** for infrastructure as code
-2. Keep model in **S3** for easier updates
-3. Use **Lambda layers** for shared dependencies
-4. Implement **versioning** for model updates
+### Deployment Architecture:
+- **Docker containers**: Eliminates environment inconsistencies (Mac → Lambda)
+- **GitHub Actions CI/CD**: Automated training and deployment on every push
+- **ECR registry**: Stores Docker images for Lambda
+- **Automatic retraining**: Model updates with fresh ETF data on each deploy
 
-## Stopping the API (Cost Control)
+## Cost Control
 
 ### To save costs when not using:
 ```bash
-# Delete API Gateway
-aws apigateway delete-rest-api --rest-api-id xxxxx
-
-# Disable Lambda (or delete)
-aws lambda delete-function --function-name financial-forecasting-lstm
+# Disable Lambda function (pause billing)
+aws lambda delete-function --function-name financial-forecaster
 ```
 
-### Restore:
-Keep CloudFormation stack → Export → Re-import to restore quickly
+### Re-deploy:
+Just push to main branch - GitHub Actions will rebuild and redeploy
 
-## Code Examples
+## Testing the Deployment
 
-### Python client:
-```python
-import requests
-import json
+### Using Lambda Function URL (Direct):
+```bash
+# Get Function URL from Lambda Console
+# Configuration → Function URL
 
-API_URL = "https://xxxxx.execute-api.region.amazonaws.com/prod/predict"
-
-def predict(ticker, features):
-    response = requests.post(
-        API_URL,
-        json={"ticker": ticker, "features": features},
-        headers={"X-API-Key": "your-api-key"}
-    )
-    return response.json()
-
-# Usage
-result = predict("SPY", my_features)
-print(f"Predicted price: ${result['prediction']:.2f}")
+curl -X POST https://xxxxx.lambda-url.us-east-1.on.aws/ \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "body": "{\"data\": [[...60x12 normalized features...]]}"
+  }'
 ```
 
-### Using AWS SDK:
+### Using AWS CLI:
 ```bash
 aws lambda invoke \
-  --function-name financial-forecasting-lstm \
-  --payload '{"ticker":"SPY","features":[...]}' \
+  --function-name financial-forecaster \
+  --payload '{"body": "{\"data\": [...]}" }' \
   response.json
 
 cat response.json
@@ -349,12 +337,6 @@ See `MLFLOW_SHOWCASE.md` for detailed screenshots showing:
 - Metrics comparison
 - Parameter configurations
 - Historical run tracking
-
-### Next Steps
-1. Deploy Lambda function
-2. Test API endpoints
-3. Monitor CloudWatch logs
-4. Scale based on demand
 
 ---
 

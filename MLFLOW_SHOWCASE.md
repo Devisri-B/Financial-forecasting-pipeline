@@ -7,7 +7,7 @@ MLflow is an open-source platform for managing ML workflow, including:
 - **Model Serving**: Deploy models as REST APIs
 - **Runs Management**: Compare multiple experiments
 
-## Our Implementation
+## Implementation
 
 ### 1. Experiment Architecture
 ```

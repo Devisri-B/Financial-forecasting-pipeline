@@ -17,7 +17,7 @@ from features import FeatureEngineer
 from model import StockPredictor
 from sklearn.preprocessing import StandardScaler
 import joblib
-from train import create_sequences, EarlyStopping, set_seeds
+from train_single_ticker import create_sequences, EarlyStopping, set_seeds
 from hydra.utils import get_original_cwd
 
 class ExperimentRunner:
