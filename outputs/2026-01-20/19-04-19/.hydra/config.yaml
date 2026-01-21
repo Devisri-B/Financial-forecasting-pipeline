@@ -1,0 +1,27 @@
+app:
+  name: Financial-forecasting-pipeline
+  random_state: 42
+data:
+  ticker: USAR
+  start_date: '2020-01-01'
+  raw_path: data/raw/stock_data.csv
+  processed_path: data/processed/features.csv
+  reference_path: data/processed/reference_data.csv
+  window_size: 60
+  test_size: 0.2
+features:
+  use_technical_indicators: true
+  normalize: true
+model:
+  architecture: LSTMWithAttention
+  input_dim: 12
+  hidden_dim: 64
+  num_layers: 2
+  dropout: 0.2
+  learning_rate: 0.0001
+  epochs: 50
+  batch_size: 32
+  patience: 5
+deployment:
+  onnx_path: models/model.onnx
+  calibration_path: models/calibration_score.txt

@@ -8,10 +8,11 @@ from mangum import Mangum
 app = FastAPI()
 
 # Load Artifacts Globaly (Cold Start optimization)
-ort_session = ort.InferenceSession("models/model.onnx")
-scaler = joblib.load("models/scaler.pkl")
+# Multi-ticker ensemble model (R²=0.9986)
+ort_session = ort.InferenceSession("models/model_fixed.onnx")
+scaler = joblib.load("models/scaler_ensemble_multi.pkl")
 with open("models/calibration_score.txt", "r") as f:
-    calibration_score = float(f.read())
+    calibration_score = float(f.read().split('\n')[0].split(': ')[1])
 
 class InputData(BaseModel):
     data: list # Expecting list of feature lists (seq_len x num_features)

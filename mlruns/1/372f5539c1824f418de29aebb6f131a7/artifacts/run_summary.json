@@ -1,0 +1,13 @@
+{
+  "learning_rate": 0.001,
+  "hidden_dim": 128,
+  "dropout": 0.2,
+  "window_size": 60,
+  "final_test_nll": 3.059929132461548,
+  "mae": 1.4850963354110718,
+  "mse": 4.3162126541137695,
+  "coverage_1sigma": 0.3761467933654785,
+  "avg_uncertainty": 0.8137475848197937,
+  "runtime_sec": 5.582112334028352,
+  "data_hash": "2dbef0e7527211f143e393a4bfc6a37d"
+}

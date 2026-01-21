@@ -19,11 +19,11 @@ jobs:
       - name: Install Dependencies
         run: pip install -r requirements-dev.txt
 
-      # 2. Run Training Pipeline
-      - name: Train & Convert to ONNX
+      # 2. Run Training Pipeline (Multi-Ticker)
+      - name: Train Multi-Ticker Model & Convert to ONNX
         run: |
-          python src/data_loader.py
-          python src/train.py
+          python src/multi_ticker_loader.py     # Download 4 ETFs (SPY, QQQ, DIA, IWM)
+          python src/train_ensemble_multi.py    # Train ensemble (R²=0.9986)
 
       # 3. Login to AWS
       - name: Login to Amazon ECR

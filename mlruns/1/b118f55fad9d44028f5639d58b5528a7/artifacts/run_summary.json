@@ -1,0 +1,17 @@
+{
+  "learning_rate": 0.001,
+  "hidden_dim": 64,
+  "dropout": 0.2,
+  "window_size": 60,
+  "final_test_mse": 4.352755069732666,
+  "final_test_rmse": 2.0863256454467773,
+  "mae": 1.4937726259231567,
+  "mse": 4.352755069732666,
+  "r_squared": -1.0540521144866943,
+  "mape": 101.87609100341797,
+  "mean_residual": 1.4915049076080322,
+  "std_residual": 1.4655624628067017,
+  "overfitting_ratio": 0.19444493492577966,
+  "runtime_sec": 3.8207214580033906,
+  "data_hash": "2dbef0e7527211f143e393a4bfc6a37d"
+}

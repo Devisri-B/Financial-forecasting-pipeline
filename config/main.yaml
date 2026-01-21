@@ -4,7 +4,7 @@ app:
 
 data:
   ticker: "USAR"
-  start_date: "2020-01-01"
+  start_date: "2015-01-01"
   raw_path: "data/raw/stock_data.csv"
   processed_path: "data/processed/features.csv"
   reference_path: "data/processed/reference_data.csv"
@@ -18,13 +18,13 @@ features:
 model:
   architecture: "LSTMWithAttention"
   input_dim: 12    # Will match number of features (OHLCV + Indicators)
-  hidden_dim: 64
-  num_layers: 2
-  dropout: 0.2
-  learning_rate: 0.001
-  epochs: 50
+  hidden_dim: 128
+  num_layers: 3
+  dropout: 0.05
+  learning_rate: 0.01
+  epochs: 100
   batch_size: 32
-  patience: 5      # Early stopping
+  patience: 15     # Early stopping (best config so far)
 
 deployment:
   onnx_path: "models/model.onnx"

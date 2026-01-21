@@ -1,0 +1,10 @@
+Close
+High
+Low
+Open
+Volume
+log_ret
+rsi
+macd
+bb_width
+sma_20

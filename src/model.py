@@ -31,4 +31,5 @@ class StockPredictor(nn.Module):
         lstm_out, _ = self.lstm(x)
         attn_out = self.attention(lstm_out)
         out = self.fc(attn_out)
+        # Single prediction output (point estimate)
         return out

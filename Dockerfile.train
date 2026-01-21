@@ -1,0 +1,23 @@
+# Use the same base image as AWS to ensure compatibility
+FROM public.ecr.aws/lambda/python:3.11
+
+# Install GCC 11+ and build tools (Fixes NumPy GCC >= 9.3 requirement)
+# We use 'yum' because AWS Lambda is based on Amazon Linux 2
+RUN amazon-linux-extras install -y gcc11-c++ && \
+    yum install -y gcc11 gcc11-c++ python3-devel && \
+    update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-11 100 && \
+    update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-11 100
+
+# Install dependencies (Standard pip, no Mac conflicts)
+COPY requirements.txt .
+COPY requirements-dev.txt .
+RUN pip install --upgrade pip setuptools wheel && \
+    pip install --no-cache-dir -r requirements-dev.txt && \
+    pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu
+
+# Copy the source code
+COPY src/ ${LAMBDA_TASK_ROOT}/src/
+COPY config/ ${LAMBDA_TASK_ROOT}/config/
+
+# Set the entrypoint to run the training script
+ENTRYPOINT ["python", "src/train.py"]
