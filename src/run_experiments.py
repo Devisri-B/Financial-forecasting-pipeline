@@ -193,7 +193,7 @@ class ExperimentRunner:
             metrics["runtime_sec"] = runtime
             mlflow.log_metric("runtime_sec", runtime)
             
-            print(f"\n✅ Results for {exp_name}:")
+            print(f"\n Results for {exp_name}:")
             print(f"   R²: {test_r2.item():.4f}")
             print(f"   MSE: {test_mse.item():.6f}")
             print(f"   RMSE: {rmse.item():.4f}")
@@ -256,7 +256,7 @@ def run_experiments(cfg: DictConfig):
         print(f"  Runtime: {metrics['runtime_sec']:.1f}s")
     
     best_exp = max(results.items(), key=lambda x: x[1]['test_r2'])
-    print(f"\n🏆 Best Experiment: {best_exp[0]} with R²={best_exp[1]['test_r2']:.4f}")
+    print(f"\n Best Experiment: {best_exp[0]} with R²={best_exp[1]['test_r2']:.4f}")
 
 if __name__ == "__main__":
     run_experiments()

@@ -48,7 +48,7 @@ ax2.annotate(f'{lstm_r2[1]:.4f}', xy=(sample_sizes[1], lstm_r2[1]),
 
 plt.tight_layout()
 plt.savefig('outputs/performance_comparison.png', dpi=150, bbox_inches='tight')
-print('✅ Saved performance comparison to outputs/performance_comparison.png')
+print(' Saved performance comparison to outputs/performance_comparison.png')
 print(f'   Single-ticker LSTM: R²={r2_scores[0]:.3f}')
 print(f'   Multi-ticker LSTM: R²={r2_scores[1]:.4f} (88x improvement)')
 print(f'   Multi-ticker Ensemble: R²={r2_scores[2]:.4f} (+1.6% over LSTM)')

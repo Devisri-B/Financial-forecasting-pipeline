@@ -234,6 +234,6 @@ See `MLFLOW_SHOWCASE.md` for detailed screenshots showing:
 
 ---
 
-**Status**: ✅ Production-ready  
+**Status**:  Production-ready  
 **Cost**: ~$0.35/month for 100 daily predictions  
 **Model R²**: 0.9826 (LSTM), 0.9986 (Ensemble)

@@ -41,7 +41,7 @@ def train_on_multi_ticker(cfg: DictConfig):
     
     # Combine all processed data
     all_features = pd.concat(processed_data, ignore_index=True)
-    print(f"\n✅ Total training samples after feature engineering: {len(all_features)}")
+    print(f"\n Total training samples after feature engineering: {len(all_features)}")
     
     # Prepare data
     feature_cols = [col for col in all_features.columns if col != 'Close']
@@ -147,7 +147,7 @@ def main(cfg: DictConfig):
         ss_tot = torch.sum((y_test - y_mean) ** 2)
         r2 = 1 - (ss_res / ss_tot)
     
-    print(f"\n✅ Multi-Ticker Model Results:")
+    print(f"\n Multi-Ticker Model Results:")
     print(f"   Test MSE: {test_mse.item():.4f}")
     print(f"   Test R²: {r2.item():.4f}")
     

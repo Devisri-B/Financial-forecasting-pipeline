@@ -58,7 +58,7 @@ def train_ensemble_multi_ticker(cfg: DictConfig):
             print(f"  {ticker}: {len(ticker_processed)} samples")
         
         all_features = pd.concat(processed_data, ignore_index=True)
-        print(f"\n✅ Total: {len(all_features)} samples after feature engineering")
+        print(f"\n Total: {len(all_features)} samples after feature engineering")
         
         # Prepare data
         feature_cols = [col for col in all_features.columns if col != 'Close']
@@ -227,7 +227,7 @@ def train_ensemble_multi_ticker(cfg: DictConfig):
         runtime = time.perf_counter() - start_time
         mlflow.log_metric("runtime_sec", runtime)
         
-        print(f"\n✅ Training complete in {runtime:.1f}s")
+        print(f"\n Training complete in {runtime:.1f}s")
         print(f"   LSTM: R²={lstm_r2.item():.4f}")
         print(f"   Ensemble: R²={ensemble_r2:.4f} ({improvement:+.1f}%)")
 

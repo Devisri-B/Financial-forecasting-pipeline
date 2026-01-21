@@ -1,30 +1,30 @@
 # Financial-forecasting-pipeline
 
-🏆 **Production-grade financial forecasting with 88x performance improvement through systematic experimentation, data scaling, and MLOps best practices.**
+ **Production-grade financial forecasting with 88x performance improvement through systematic experimentation, data scaling, and MLOps best practices.**
 
 ---
 
-## 📊 **Executive Summary: The Journey**
+##  **Executive Summary: The Journey**
 
 | Phase | Approach | Data | Result | Key Learning |
 |-------|----------|------|--------|---------------|
-| **Phase 1** | Single-ticker LSTM | 570 samples | R²=0.111 ❌ | Underfitting on small data |
-| **Phase 2** | Hyperparameter tuning | 570 samples | R²=0.111 ⚠️ | Tuning can't fix data scarcity |
-| **Phase 3** | Multi-ticker LSTM | 7,666 samples | R²=0.9826 ✅ | **Data quality > Model complexity** |
-| **Phase 4** | Multi-ticker Ensemble | 7,666 samples | **R²=0.9986** ✅✅ | **Combination of diverse models wins** |
+| **Phase 1** | Single-ticker LSTM | 570 samples | R²=0.111  | Underfitting on small data |
+| **Phase 2** | Hyperparameter tuning | 570 samples | R²=0.111  | Tuning can't fix data scarcity |
+| **Phase 3** | Multi-ticker LSTM | 7,666 samples | R²=0.9826  | **Data quality > Model complexity** |
+| **Phase 4** | Multi-ticker Ensemble | 7,666 samples | **R²=0.9986**  | **Combination of diverse models wins** |
 
 **Performance**: 88x improvement (R²: 0.111 → 0.9986) | **Data scaling**: 13.4x more samples | **Production ready**: AWS Lambda deployment + MLflow tracking
 
 ---
 
-## 🚀 **What This Project Demonstrates**
+##  **What This Project Demonstrates**
 
-- ✅ **Systematic experimentation**: A/B/C testing with full MLflow logging
-- ✅ **Data-driven decisions**: Recognized data scarcity problem, solved via multi-ticker approach
-- ✅ **Ensemble methods**: Stacked LSTM (50%) + Linear (48%) + ARIMA (2%) → 0.16% improvement
-- ✅ **MLOps maturity**: Comprehensive tracking, reproducibility, artifact logging
-- ✅ **Production deployment**: AWS Lambda handler + API Gateway ready (cost: $0.35/month)
-- ✅ **Clear communication**: Documented journey from failure → breakthrough
+-  **Systematic experimentation**: A/B/C testing with full MLflow logging
+-  **Data-driven decisions**: Recognized data scarcity problem, solved via multi-ticker approach
+-  **Ensemble methods**: Stacked LSTM (50%) + Linear (48%) + ARIMA (2%) → 0.16% improvement
+-  **MLOps maturity**: Comprehensive tracking, reproducibility, artifact logging
+-  **Production deployment**: AWS Lambda handler + API Gateway ready (cost: $0.35/month)
+-  **Clear communication**: Documented journey from failure → breakthrough
 
 ---
 
@@ -55,7 +55,7 @@ Financial-forecasting-pipeline/
 │   ├── scaler_ensemble_multi.pkl   # StandardScaler for inference
 │   └── model.onnx                  # ONNX export (AWS Lambda ready)
 ├── outputs/                         # Training outputs & visualizations
-├── MLFLOW_SHOWCASE.md              # Experiment comparison for recruiters
+├── MLFLOW_SHOWCASE.md              # Detailed experiment comparison and analysis
 ├── AWS_DEPLOYMENT.md               # Step-by-step AWS Lambda guide
 ├── Dockerfile.train                # Lambda-compatible Docker image
 ├── requirements.txt                # Production dependencies
@@ -75,24 +75,24 @@ Financial-forecasting-pipeline/
 
 ---
 
-## 🎯 Phase-by-Phase Journey
+##  Phase-by-Phase Journey
 
 ### Phase 1️⃣ : Single-Ticker Attempt (USAR)
 **Challenge**: Predict single stock (USAR IPO July 2023) with only 570 training samples
 
 **What I tried**:
-- Basic LSTM (hidden=64, 2 layers) → R²=-1.054 ❌ (stopped too early, patience=5)
-- Tuned patience to 15 → R²=0.111 ✅ (improvement but still failing)
-- Larger models (hidden=256) → R²=-0.130 ❌ (overfitting)
+- Basic LSTM (hidden=64, 2 layers) → R²=-1.054  (stopped too early, patience=5)
+- Tuned patience to 15 → R²=0.111  (improvement but still failing)
+- Larger models (hidden=256) → R²=-0.130  (overfitting)
 
 **Why it failed**: 
 - **Data scarcity**: 570 samples for deep learning insufficient (typical ratio: 100+ samples/parameter)
 - **Limited history**: Only 2.5 years of data (stock IPO'd July 2023)
 - **Learning ceiling**: Even perfect tuning can't overcome missing training data
 
-**Key insight**: ❌ **Tuning hyperparameters can't fix broken data**
+**Key insight**:  **Tuning hyperparameters can't fix broken data**
 
-### Phase 2️⃣ : Multi-Ticker Breakthrough (SPY + QQQ + DIA + IWM)
+### Phase 2: Multi-Ticker Training (SPY + QQQ + DIA + IWM)
 **Insight**: Instead of predicting one stock, train on related market ETFs (4x more data)
 
 **Approach**:
@@ -106,10 +106,10 @@ python src/train.py  # Same model architecture, better data
 ```
 
 **Results**:
-- **LSTM alone**: R²=0.9826 ✅ (88x improvement!)
-- **Ensemble** (LSTM+Linear+ARIMA): R²=0.9986 ✅✅ (near-perfect)
+- **LSTM alone**: R²=0.9826  (88x improvement!)
+- **Ensemble** (LSTM+Linear+ARIMA): R²=0.9986  (near-perfect)
 
-**Why it worked**: ✅ **Data quality > Model complexity. Implicit transfer learning across related tickers.**
+**Why it worked**:  **Data quality > Model complexity. Implicit transfer learning across related tickers.**
 
 ### Phase 3️⃣ : Ensemble Stacking
 **Hypothesis**: Multiple models capture different aspects of the time series
@@ -121,18 +121,18 @@ ensemble = 0.50 * LSTM(R²=0.9826) + 0.48 * Linear(R²=0.996) + 0.02 * ARIMA(AIC
 # Result: R²=0.9986 (+0.16% over LSTM alone)
 ```
 
-**Insight**: ✅ **Ensemble adds marginal value with sufficient diverse data (0.16% gain). Linear model surprisingly competitive.**
+**Insight**:  **Ensemble adds marginal value with sufficient diverse data (0.16% gain). Linear model surprisingly competitive.**
 
 ### Phase 4️⃣ : MLOps & Deployment
 **Deliverables**:
-- ✅ MLflow tracking: All experiments logged with metrics/params/artifacts
-- ✅ AWS Lambda handler: Serverless inference (~100ms, $0.35/month)
-- ✅ Production-ready ONNX export
-- ✅ Reproducibility: Seed management, data hashing, hardware context logged
+-  MLflow tracking: All experiments logged with metrics/params/artifacts
+-  AWS Lambda handler: Serverless inference (~100ms, $0.35/month)
+-  Production-ready ONNX export
+-  Reproducibility: Seed management, data hashing, hardware context logged
 
 ---
 
-## 📊 Comprehensive Experiment Results
+##  Experiment Results
 
 ### Experiment 1: Single-Ticker A/B/C Testing (Learning Phase)
 
@@ -140,14 +140,14 @@ ensemble = 0.50 * LSTM(R²=0.9826) + 0.48 * Linear(R²=0.996) + 0.02 * ARIMA(AIC
 
 | Experiment | Config | hidden_dim | layers | dropout | lr | patience | Samples | R² | MSE | Runtime | Interpretation |
 |---|---|---|---|---|---|---|---|---|---|---|---|
-| **A** | Conservative | 64 | 2 | 0.1 | 0.005 | 10 | 605 | 0.835 | 0.046 | ~18s | ✅ Simple model works on small data |
-| **B** | Optimized | 128 | 3 | 0.05 | 0.01 | 15 | 605 | **0.111** | High | ~440s | ⚠️ Complexity hurts without more data |
-| **C** | Aggressive | 256 | 3 | 0.15 | 0.02 | 20 | 605 | -2.66 | 1.02 | ~663s | ❌ Learning rate too high = divergence |
+| **A** | Conservative | 64 | 2 | 0.1 | 0.005 | 10 | 605 | 0.835 | 0.046 | ~18s |  Simple model works on small data |
+| **B** | Optimized | 128 | 3 | 0.05 | 0.01 | 15 | 605 | **0.111** | High | ~440s |  Complexity hurts without more data |
+| **C** | Aggressive | 256 | 3 | 0.15 | 0.02 | 20 | 605 | -2.66 | 1.02 | ~663s |  Learning rate too high = divergence |
 
 **Key Insights**:
-- ✅ **Exp A** shows 0.835 R² - model has potential
-- ⚠️ **Exp B** (0.111 R²) - adding layers/capacity doesn't help on 605 samples
-- ❌ **Exp C** (-2.66 R²) - aggressive learning rate causes instability regardless of data
+-  **Exp A** shows 0.835 R² - model has potential
+-  **Exp B** (0.111 R²) - adding layers/capacity doesn't help on 605 samples
+-  **Exp C** (-2.66 R²) - aggressive learning rate causes instability regardless of data
 - **Decision**: "All A/B/C configs plateau. This is a data problem, not a tuning problem."
 
 ---
@@ -161,7 +161,7 @@ ensemble = 0.50 * LSTM(R²=0.9826) + 0.48 * Linear(R²=0.996) + 0.02 * ARIMA(AIC
 LSTM R²: 0.111
 Linear R²: -0.15 (overfitted on 605 samples)
 ARIMA: Failed to converge
-Ensemble R²: -0.15  # ❌ WORSE than LSTM alone
+Ensemble R²: -0.15  #  WORSE than LSTM alone
 ```
 
 **Why it failed**:
@@ -173,15 +173,15 @@ Ensemble R²: -0.15  # ❌ WORSE than LSTM alone
 
 ---
 
-### Experiment 3: Multi-Ticker A/B/C Testing (Breakthrough Phase)
+### Experiment 3: Multi-Ticker A/B/C Testing
 
 **Research Question**: Does 13.4x more data fix underfitting?
 
 | Experiment | Config | hidden_dim | layers | dropout | lr | patience | Samples | R² | MSE | Runtime | Interpretation |
 |---|---|---|---|---|---|---|---|---|---|---|---|
-| **A** | Conservative | 64 | 2 | 0.1 | 0.005 | 10 | 7,666 | 0.835 | 0.046 | 18s | ✅ Even simple model learns well now! |
-| **B** | Optimized | 128 | 3 | 0.05 | 0.01 | 15 | 7,666 | **0.9826** | 0.0049 | 440s | ✅✅✅ **88x improvement!** |
-| **C** | Aggressive | 256 | 3 | 0.15 | 0.02 | 20 | 7,666 | -2.66 | 1.02 | 663s | ❌ Still fails (lr=0.02 too high) |
+| **A** | Conservative | 64 | 2 | 0.1 | 0.005 | 10 | 7,666 | 0.835 | 0.046 | 18s |  Even simple model learns well now! |
+| **B** | Optimized | 128 | 3 | 0.05 | 0.01 | 15 | 7,666 | **0.9826** | 0.0049 | 440s |  **88x improvement!** |
+| **C** | Aggressive | 256 | 3 | 0.15 | 0.02 | 20 | 7,666 | -2.66 | 1.02 | 663s |  Still fails (lr=0.02 too high) |
 
 **Critical Discovery**:
 - **Exp B**: Same hyperparameters as single-ticker B, but R² improved from 0.111 → 0.9826 (**88x**)
@@ -208,7 +208,7 @@ Optimal weights:
   - Linear: 48%     # Linear trends, drift
   - ARIMA: 2%       # Short-term autocorrelation
 
-Ensemble R²: 0.9986  # ✅✅✅ +0.16% over LSTM alone
+Ensemble R²: 0.9986  #  +0.16% over LSTM alone
 ```
 
 **Why it worked (vs single-ticker failure)**:
@@ -266,7 +266,7 @@ model.train(train_data)
 | **Best LSTM R²** | 0.111 (Exp B) | 0.9826 (Exp B) | **88.4x** |
 | **Ensemble R²** | -0.15 (failed) | 0.9986 (success) | **Infinite** |
 | **Test MSE** | High | 0.0004 | **99.96% reduction** |
-| **Production readiness** | ❌ Unreliable | ✅ Deployed | ✅ |
+| **Production readiness** |  Unreliable |  Deployed |  |
 
 ### Experiment Tracking & Optimization
 
@@ -276,57 +276,57 @@ Production-grade MLflow integration with full reproducibility.
 
 **Loss Metrics**:
 - **MSE / RMSE**: Prediction error magnitude
-  - **Train << Val**: ⚠️ Model underfitting (not learning patterns)
-  - **Train ≈ Val**: ✅ Balanced training
-  - **Train < Val << 2x Train**: ✅ Mild overfitting (acceptable)
-  - **Val >> Train**: ⚠️ Severe overfitting
+  - **Train << Val**:  Model underfitting (not learning patterns)
+  - **Train ≈ Val**:  Balanced training
+  - **Train < Val << 2x Train**:  Mild overfitting (acceptable)
+  - **Val >> Train**:  Severe overfitting
 
 **Goodness of Fit**:
 - **R² Score**: How well model explains variance
   - **R² = 1.0**: Perfect predictions  
   - **R² = 0**: Predictions as good as predicting mean
-  - **R² < 0**: ⚠️ Worse than the mean (model is making it worse!)
+  - **R² < 0**:  Worse than the mean (model is making it worse!)
 
 **Calibration** (predictions accurate on average?):
 - **mean_residual**: Should be ~0 for well-calibrated model
-  - **Close to 0**: ✅ Well-calibrated
+  - **Close to 0**:  Well-calibrated
   - **Large positive**: Model systematically predicts too low
   - **Large negative**: Model systematically predicts too high  
 - **std_residual**: Spread of errors; lower is better
 
 **Overfitting Detection**:
 - **overfitting_ratio** = Test RMSE / Train RMSE
-  - **1.0-1.5**: ✅ Healthy (test slightly worse)
-  - **< 1.0**: ⚠️ Underfitting (test better than train—backwards!)
-  - **> 2.0**: ⚠️ Overfitting (test much worse)
+  - **1.0-1.5**:  Healthy (test slightly worse)
+  - **< 1.0**:  Underfitting (test better than train—backwards!)
+  - **> 2.0**:  Overfitting (test much worse)
 
 ### Current Model Status
 
-� **BREAKTHROUGH**: Multi-ticker LSTM achieved R²=0.9826
+**Current Results**: Multi-ticker LSTM R²=0.9826
 - **Data**: 7,666 training samples (11+ years, 4 ETFs)
 - **Model**: LSTM (128 hidden, 3 layers, 5% dropout)
 - **Performance**: Explains 98.26% of price variance
 - **Ensemble**: 0.9986 R² with LSTM+Linear+ARIMA stacking
 
-✅ **Status**: Production-ready, deployed to AWS Lambda (cost: $0.35/month)
+**Deployment**: AWS Lambda with API Gateway (monthly cost: $0.35)
 
 ---
 
-## 🔧 Hyperparameter Tuning Journey
+##  Hyperparameter Tuning Journey
 
 **Single-Ticker Attempts**:
 
 | Config | hidden_dim | layers | dropout | lr | patience | Data | R² | Status |
 |--------|-----------|--------|---------|-----|---------|------|-----|--------|
-| Early attempt | 64 | 2 | 0.2 | 0.001 | 5 | 605 | -1.054 | ❌ Stopped too early |
-| **First fix** | 128 | 3 | 0.05 | 0.01 | 15 | 605 | **0.111** | ✅ Best on single-ticker |
-| Over-regularized | 256 | 3 | 0.02 | 0.005 | 25 | 605 | -0.130 | ❌ Overfitting |
-| Simple model | 64 | 2 | 0.15 | 0.01 | 30 | 605 | -0.304 | ❌ Underfitting |
-| **Multi-ticker** | 128 | 3 | 0.05 | 0.01 | 15 | 7,666 | **0.9826** | ✅✅ **BREAKTHROUGH** |
+| Early attempt | 64 | 2 | 0.2 | 0.001 | 5 | 605 | -1.054 |  Stopped too early |
+| **First fix** | 128 | 3 | 0.05 | 0.01 | 15 | 605 | **0.111** |  Best on single-ticker |
+| Over-regularized | 256 | 3 | 0.02 | 0.005 | 25 | 605 | -0.130 |  Overfitting |
+| Simple model | 64 | 2 | 0.15 | 0.01 | 30 | 605 | -0.304 |  Underfitting |
+| **Multi-ticker** | 128 | 3 | 0.05 | 0.01 | 15 | 7,666 | **0.9826** |  Best result |
 
 **Key takeaway**: Same model (hidden=128, 3 layers) went from R²=0.111 → R²=0.9826 just by changing data. **88x improvement proves data > tuning.**
 
-### Comprehensive Logging
+### MLflow Logging
 
 Each MLflow run captures:
 
@@ -355,7 +355,7 @@ Each MLflow run captures:
 - Model exports (ONNX opset 18 + TorchScript)
 - Run summary JSON (key metrics for quick comparison)
 
-## 🚀 Running Experiments
+##  Running Experiments
 
 ### Quick Start
 ```bash
@@ -403,7 +403,7 @@ All runs are tracked with full reproducibility:
   - `run_summary.json` - Key metrics at a glance
   - `feature_stats.json` - Train/test statistics for drift detection
 
-## 🐳 AWS Lambda Deployment
+##  AWS Lambda Deployment
 
 ### Build Lambda-Compatible Container
 ```bash
@@ -411,13 +411,13 @@ docker build --platform linux/amd64 -f Dockerfile.train -t financial-trainer .
 ```
 
 **Docker Optimizations**:
-- ✅ Uses AWS Lambda Python 3.11 base image
-- ✅ GCC 11+ compiler for NumPy compatibility (solves GCC >= 9.3 requirement)
-- ✅ CPU-only PyTorch to reduce image size
-- ✅ ONNX Runtime for lightweight inference
-- ✅ No-cache pip install for minimal layers
+-  Uses AWS Lambda Python 3.11 base image
+-  GCC 11+ compiler for NumPy compatibility (solves GCC >= 9.3 requirement)
+-  CPU-only PyTorch to reduce image size
+-  ONNX Runtime for lightweight inference
+-  No-cache pip install for minimal layers
 
-## 📈 Model Architecture
+##  Model Architecture
 
 ```python
 class StockPredictor(nn.Module):
@@ -428,7 +428,7 @@ class StockPredictor(nn.Module):
     - Output: (mean, variance) for uncertainty
 ```
 
-## 📊 Loss Function
+##  Loss Function
 
 **Gaussian Negative Log Likelihood (NLL)**:
 ```
@@ -439,7 +439,7 @@ This penalizes both:
 1. Incorrect predictions (second term)
 2. Overconfident predictions (first term)
 
-## 📋 Next Steps
+##  Next Steps
 
 - [x] Production-grade MLflow tracking with full provenance
 - [x] Comprehensive artifact logging (models, plots, configs)
@@ -454,7 +454,7 @@ This penalizes both:
 
 ---
 
-## 🚀 **MAJOR BREAKTHROUGH: Multi-Ticker Training**
+##  Multi-Ticker Training
 
 ### Problem Solved
 **Single-ticker limitation**: USAR (IPO 2023) had only 631 samples → insufficient for deep learning  
@@ -498,13 +498,13 @@ python src/train_ensemble_multi.py
 
 ---
 
-## 🔧 Decision Tree: From Failure to Success
+##  Decision Tree: From Failure to Success
 
 ```
 Start: Single-ticker USAR (605 samples, R²=-1.054)
   |
   ├─> Fix 1: Increase patience (5→15)
-  |     └─> Result: R²=0.111 ✅ (improvement but still underfitting)
+  |     └─> Result: R²=0.111  (improvement but still underfitting)
   |
   ├─> Experiment A/B/C: Try different hyperparameters
   |     ├─> A (simple): R²=0.835
@@ -513,7 +513,7 @@ Start: Single-ticker USAR (605 samples, R²=-1.054)
   |     └─> **Decision**: "All plateau around 0.111. Not a tuning problem!"
   |
   ├─> Try ensemble (LSTM+Linear+ARIMA)
-  |     └─> Result: R²=-0.15 ❌ (worse than LSTM!)
+  |     └─> Result: R²=-0.15  (worse than LSTM!)
   |     └─> **Root cause**: All models overfit on 605 samples
   |     └─> **Decision**: "Need more data before ensemble can work"
   |
@@ -522,7 +522,7 @@ Start: Single-ticker USAR (605 samples, R²=-1.054)
   |
   ├─> Run same A/B/C experiments on multi-ticker:
   |     ├─> A (simple): R²=0.835 (same as before)
-  |     ├─> B (complex): R²=0.9826 ✅✅✅ (88x improvement!)
+  |     ├─> B (complex): R²=0.9826  (88x improvement!)
   |     └─> C (aggressive): R²=-2.66 (still fails)
   |     └─> **Key insight**: Same hyperparameters, vastly better data
   |
@@ -530,19 +530,19 @@ Start: Single-ticker USAR (605 samples, R²=-1.054)
         ├─> LSTM: R²=0.9826
         ├─> Linear: R²=0.996 (surprisingly good!)
         ├─> ARIMA: Baseline
-        └─> Combined: R²=0.9986 ✅✅✅ (+0.16% gain)
+        └─> Combined: R²=0.9986  (+0.16% gain)
         └─> **Decision**: "Production ready. Deploy to AWS Lambda!"
 
 Final Result: 605 samples (R²=0.111) → 7,666 samples (R²=0.9986)
               88x improvement through data scaling, not tuning!
 ```
 
-**What this demonstrates to recruiters**:
-- 🎯 **Problem diagnosis**: Identified data scarcity as root cause
-- 🧪 **Systematic testing**: Controlled A/B/C experiments, not random tuning
-- 📊 **Metric interpretation**: Understood what each R² value meant
-- 🔄 **Adaptive strategy**: Pivoted from tuning → data scaling
-- 🚀 **Production deployment**: Ship when metrics justify it
+**Key Takeaways**:
+- **Problem diagnosis**: Identified data scarcity as root cause
+- **Systematic testing**: Controlled A/B/C experiments, not random tuning
+- **Metric interpretation**: Understood what each R² value meant
+- **Adaptive strategy**: Pivoted from tuning → data scaling
+- **Production deployment**: Ship when metrics justify it
 
 **Key Findings**: 
 - **USAR data limitation**: Ticker IPO'd July 2023 → only 631 samples available, YFinance doesn't have pre-2023 data
@@ -554,7 +554,7 @@ Final Result: 605 samples (R²=0.111) → 7,666 samples (R²=0.9986)
 
 ---
 
-## 📊 Why Performance is Plateauing
+##  Why Performance is Plateauing
 
 **Data Quality Issues**:
 1. **Limited history**: 2.5 years ≠ enough to learn multiple market regimes
@@ -569,7 +569,7 @@ Final Result: 605 samples (R²=0.111) → 7,666 samples (R²=0.9986)
 
 ---
 
-## 🚀 Production Recommendations
+##  Production Recommendations
 
 ### Immediate Wins (High Impact, Doable Now)
 1. **Add external market data**:
@@ -606,7 +606,7 @@ Final Result: 605 samples (R²=0.111) → 7,666 samples (R²=0.9986)
 
 ---
 
-## 🎯 Quick Reference
+##  Quick Reference
 
 **View MLflow UI**: http://127.0.0.1:5000  
 **Experiment name**: `Financial-forecasting-pipeline`  
@@ -616,7 +616,7 @@ Final Result: 605 samples (R²=0.111) → 7,666 samples (R²=0.9986)
 - **Best metrics**: R²=0.111, RMSE=1.37, MAE=0.88 (on 126 test samples)
 - **Limitation**: Only 631 total samples (IPO July 2023)
 
-### **Multi-Ticker (SPY+QQQ+DIA+IWM) ✅ RECOMMENDED**
+### **Multi-Ticker (SPY+QQQ+DIA+IWM)  RECOMMENDED**
 - **Config**: hidden_dim=128, num_layers=3, dropout=0.05, lr=0.01, patience=15
 - **Training data**: 7,666 samples (11+ years, 4 tickers)
 - **LSTM**: R²=0.9826, MSE=0.0049
@@ -649,7 +649,7 @@ ls outputs/ensemble_multi_ticker/  # View plots
 
 ---
 
-## 📊 Key Learnings
+##  Key Learnings
 
 1. **Data quantity matters**: 13.4x more data → 88x better performance
 2. **Ensemble works with sufficient data**: R²=0.9986 when properly validated
@@ -659,7 +659,7 @@ ls outputs/ensemble_multi_ticker/  # View plots
 
 ---
 
-## 🚀 Production Deployment Recommendations
+##  Production Deployment Recommendations
 
 ### For USAR Predictions
 ```python

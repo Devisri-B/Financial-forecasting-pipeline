@@ -91,13 +91,13 @@ All experiments track:
 
 | Metric | Exp A | Exp B | Exp C |
 |--------|-------|-------|-------|
-| **R² Score** | 0.8352 | **0.9826** | -2.6574 ❌ |
+| **R² Score** | 0.8352 | **0.9826** | -2.6574  |
 | **MSE** | 0.046028 | 0.004850 | 1.021713 |
 | **RMSE** | 0.2145 | 0.0696 | 1.0108 |
 | **MAE** | 0.1721 | 0.0507 | 0.9219 |
 | **Converged** | Epoch 14 | Epoch 72 | Epoch 30 |
 | **Training Time** | 17.7s | 440.6s | 663.5s |
-| **Recommendation** | ⚠️ | ✅ **USE THIS** | ❌ |
+| **Recommendation** |  |  **USE THIS** |  |
 
 ### 5. Key Insights from Experiments
 
@@ -107,7 +107,7 @@ All experiments track:
 - R²=0.8352 leaves significant unexplained variance
 - Too conservative, insufficient capacity
 
-**Experiment B (Optimized) ✅**
+**Experiment B (Optimized) **
 - **BEST PERFORMER**: R²=0.9826
 - Balanced: Enough capacity (128 hidden) without overfitting
 - Proper regularization (dropout=0.05)
@@ -115,7 +115,7 @@ All experiments track:
 - Patience (15) balances early stopping with full training
 - Takes longer (440s) but achieves near-perfect predictions
 
-**Experiment C (Aggressive) ❌**
+**Experiment C (Aggressive) **
 - **FAILED**: R²=-2.6574 (worse than predicting mean!)
 - Large model (256 hidden units) overfits despite high dropout (0.15)
 - High learning rate (0.02) causes instability
@@ -191,7 +191,7 @@ with mlflow.start_run(run_name="exp_B_optimized"):
     mlflow.pytorch.log_model(model, artifact_path="model")
 ```
 
-### 8. Benefits for Recruiters
+### 8. Project Benefits
 
 This implementation demonstrates:
 1. **Experiment Management**: Systematic tracking of A/B/C tests

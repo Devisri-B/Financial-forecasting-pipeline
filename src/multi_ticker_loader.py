@@ -31,7 +31,7 @@ def load_multi_ticker_data(cfg: DictConfig):
         df = yf.download(ticker, start="2015-01-01", progress=False)
         
         if df.empty:
-            print(f"    ⚠️  No data for {ticker}, skipping...")
+            print(f"      No data for {ticker}, skipping...")
             continue
         
         # Flatten multi-index columns
@@ -43,7 +43,7 @@ def load_multi_ticker_data(cfg: DictConfig):
         df['Date'] = df.index
         df.reset_index(drop=True, inplace=True)
         
-        print(f"    ✅ {ticker}: {len(df)} samples ({df['Date'].min()} to {df['Date'].max()})")
+        print(f"     {ticker}: {len(df)} samples ({df['Date'].min()} to {df['Date'].max()})")
         all_data.append(df)
     
     # Combine all tickers
@@ -57,12 +57,12 @@ def load_multi_ticker_data(cfg: DictConfig):
     multi_ticker_path = cfg.data.raw_path.replace('.csv', '_multi_ticker.csv')
     combined_df.to_csv(multi_ticker_path, index=False)
     
-    print(f"\n✅ Total samples: {len(combined_df)}")
+    print(f"\n Total samples: {len(combined_df)}")
     print(f"   Date range: {combined_df['Date'].min()} to {combined_df['Date'].max()}")
     print(f"   Saved to: {multi_ticker_path}")
     
     # Also create USAR-only version for comparison
-    print(f"\n📊 Also downloading USAR for target prediction...")
+    print(f"\n Also downloading USAR for target prediction...")
     df_usar = yf.download(cfg.data.ticker, start=cfg.data.start_date, progress=False)
     if isinstance(df_usar.columns, pd.MultiIndex):
         df_usar.columns = df_usar.columns.get_level_values(0)
