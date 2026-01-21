@@ -1,120 +1,164 @@
 # AWS Lambda Deployment Guide
 
 ## Overview
-Production-ready serverless deployment of financial forecasting model on AWS Lambda.
+Automated serverless deployment using Docker containers and GitHub Actions CI/CD pipeline.
 
 ## Architecture
 ```
-User API Request
+GitHub Push (main branch)
     ↓
-API Gateway (HTTPS endpoint)
-    ↓
-Lambda Function (lambda_handler.py)
-    ↓
-Model Inference (CPU, <100ms)
-    ↓
-JSON Response with Prediction
+GitHub Actions Workflow
+    ├─> Train multi-ticker model
+    ├─> Build Docker image
+    ├─> Push to AWS ECR
+    └─> Update Lambda function
+         ↓
+AWS Lambda (Container)
+    ├─> FastAPI + Mangum
+    ├─> ONNX Runtime inference
+    └─> Returns predictions
+         ↓
+Function URL (HTTPS)
+    └─> Public endpoint
 ```
 
-## Step 1: Prepare Model Package
+## Deployment Method
 
-### Create deployment package:
+I use **Docker containers** instead of ZIP files because:
+- ONNX Runtime needs compiled dependencies
+- Consistent environment (Mac → Linux x86_64)
+- Larger deployment package (>250MB uncompressed)
+- Easier dependency management
+
+## Step 1: AWS Setup (One-Time)
+
+### 1.1 Create ECR Repository
 ```bash
-# Create deployment directory
-mkdir lambda_deployment
-cd lambda_deployment
-
-# Copy model files
-cp ../models/lstm_multi_ticker.pth .
-cp ../models/scaler_ensemble_multi.pkl .
-cp ../src/lambda_handler.py .
-
-# Install dependencies
-pip install -r requirements.txt -t .
-
-# Create ZIP for upload
-zip -r lambda_function.zip .
+aws ecr create-repository \
+  --repository-name financial-forecaster \
+  --region us-east-1
 ```
 
-### Required dependencies (requirements.txt):
-```
-torch==2.0.0
-numpy==1.26.4
-pandas==2.2.0
-scikit-learn==1.4.0
-joblib==1.3.2
-```
-
-## Step 2: Create AWS Lambda Function
-
-### Via AWS Console:
-1. **Services** → **Lambda** → **Create Function**
-2. **Function name**: `financial-forecasting-lstm`
-3. **Runtime**: Python 3.11
-4. **Architecture**: x86_64
-5. **Create function**
-
-### Upload code:
-1. **Code source** → **Upload from** → **.zip file**
-2. Select `lambda_function.zip`
-3. **Deploy**
-
-### Configure settings:
-- **Memory**: 512 MB (sufficient for inference)
-- **Timeout**: 30 seconds
-- **Ephemeral storage**: 512 MB
-
-## Step 3: Create API Gateway
-
-### Create REST API:
-1. **Services** → **API Gateway** → **Create API**
-2. **REST API** → **Build**
-3. **API name**: `financial-forecasting-api`
-
-### Create resource and method:
-1. **Resources** → **Create Resource**
-   - **Resource name**: `predict`
-   - **Create resource**
-
-2. **POST method** → **Lambda Function**
-   - **Lambda Function**: `financial-forecasting-lstm`
-   - **Save**
-
-3. **CORS** → **Enable CORS**
-   - **Save**
-
-### Deploy API:
-1. **Deploy API**
-   - **Deployment stage**: `prod`
-   - **Deploy**
-
-2. Copy **Invoke URL**: `https://xxxxx.execute-api.region.amazonaws.com/prod`
-
-## Step 4: Test API
-
-### Using curl:
+### 1.2 Create Lambda Function
 ```bash
-curl -X POST \
-  https://xxxxx.execute-api.region.amazonaws.com/prod/predict \
+# Via AWS Console:
+# 1. Services → Lambda → Create Function
+# 2. Container image
+# 3. Function name: financial-forecaster
+# 4. Container image URI: <your-ecr-uri>:latest
+# 5. Architecture: x86_64
+# 6. Memory: 512 MB
+# 7. Timeout: 30 seconds
+```
+
+### 1.3 Enable Function URL
+```bash
+# In Lambda Console:
+# Configuration → Function URL → Create function URL
+# Auth type: NONE (public endpoint)
+# CORS: Enable
+# Save
+```
+
+### 1.4 Add GitHub Secrets
+```bash
+# In GitHub repo: Settings → Secrets → Actions
+# Add the following secrets:
+AWS_ACCESS_KEY_ID=<your-access-key>
+AWS_SECRET_ACCESS_KEY=<your-secret-key>
+```
+
+## Step 2: Automated Deployment
+
+The deployment is **fully automated** via GitHub Actions:
+
+### Workflow (.github/workflows/deploy.yml)
+```yaml
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  deploy:
+    - Train multi-ticker model (Python 3.11)
+    - Build Docker image (ONNX + FastAPI)
+    - Push to ECR
+    - Update Lambda function
+```
+
+### Manual Trigger (if needed)
+```bash
+# Just push to main branch:
+git add .
+git commit -m "Update model"
+git push origin main
+
+# GitHub Actions will:
+# 1. Download 4 ETFs (SPY, QQQ, DIA, IWM)
+# 2. Train ensemble (R²=0.9986)
+# 3. Export to ONNX
+# 4. Build Docker image
+# 5. Deploy to Lambda
+```
+
+## Step 3: Local Testing (Optional)
+
+### Build Docker locally:
+```bash
+# Build for Linux x86_64 (Lambda architecture)
+docker build --platform linux/amd64 -t financial-forecaster:latest .
+
+# Test locally with Lambda runtime emulator
+docker run -p 9000:8080 financial-forecaster:latest
+
+# Test endpoint
+curl -X POST "http://localhost:9000/2015-03-31/functions/function/invocations" \
+  -d '{"body": "{\"data\": [[...60x12 features...]]}"}'
+```
+
+## Step 4: Production Endpoint
+
+### Get Function URL
+```bash
+# In AWS Lambda Console:
+# Configuration → Function URL
+# Copy the URL: https://xxxxx.lambda-url.us-east-1.on.aws/
+
+# Test production endpoint:
+curl -X POST https://xxxxx.lambda-url.us-east-1.on.aws/predict \
   -H 'Content-Type: application/json' \
   -d '{
-    "ticker": "SPY",
-    "features": [array of 600 normalized values]
+    "data": [[...60x12 normalized features...]]
   }'
 ```
 
-### Response:
+### Response Format:
 ```json
 {
-  "ticker": "SPY",
   "prediction": 450.25,
-  "confidence": 0.9826,
-  "model": "LSTM Multi-Ticker Ensemble",
-  "timestamp": "12345-request-id"
+  "interval_95": [445.10, 455.40],
+  "confidence_gap": 5.15
 }
 ```
 
-## Step 5: Cost Management
+## Step 5: Monitoring & Logs
+
+### View CloudWatch Logs:
+```bash
+# In AWS Console:
+# CloudWatch → Log Groups → /aws/lambda/financial-forecaster
+
+# Or via CLI:
+aws logs tail /aws/lambda/financial-forecaster --follow
+```
+
+### Key Metrics:
+- **Invocations**: Number of predictions
+- **Duration**: Average ~100ms
+- **Errors**: Should be 0% (monitor for ONNX errors)
+- **Throttles**: Increase reserved concurrency if throttled
+
+## Step 6: Cost Management
 
 ### Lambda pricing (US East - N. Virginia):
 - **Compute**: $0.0000002 per 100ms
@@ -123,16 +167,96 @@ curl -X POST \
 
 ### Example costs:
 - 100 daily predictions (100ms each):
-  - $0.20/month compute
-  - $0.06/month requests
-  - **Total: ~$0.30/month**
+  - Requests: 3,000/month
+  - Compute: 3,000 × 0.1s × 512MB = 150 GB-seconds
+  - **Total: $0 (within free tier)**
 
-### API Gateway pricing:
-- **Per request**: $3.50 per million requests
-- 100 daily requests = ~$0.01/month
+### Free tier limits:
+- 1 million requests/month
+- 400,000 GB-seconds/month
+- Always free (not just first 12 months)
 
 ### Total monthly cost (100 daily predictions):
-**~$0.35/month** (within free tier!)
+**$0/month** (stays within free tier)
+
+## Dockerfile Explained
+
+```dockerfile
+# AWS Lambda Python 3.11 base image
+FROM public.ecr.aws/lambda/python:3.11
+
+# Install ONNX Runtime + FastAPI + Mangum
+RUN pip install onnxruntime fastapi mangum joblib numpy scikit-learn
+
+# Copy inference code (NOT training code)
+COPY src/app.py ${LAMBDA_TASK_ROOT}/src/
+COPY src/features.py ${LAMBDA_TASK_ROOT}/src/
+
+# Copy trained model artifacts
+COPY models/model_fixed.onnx ${LAMBDA_TASK_ROOT}/models/
+COPY models/scaler_ensemble_multi.pkl ${LAMBDA_TASK_ROOT}/models/
+COPY models/calibration_score.txt ${LAMBDA_TASK_ROOT}/models/
+
+# Lambda handler
+CMD [ "src.app.handler" ]
+```
+
+**Why this works:**
+- Uses AWS-provided Lambda base image
+- ONNX Runtime is CPU-only (small size)
+- FastAPI + Mangum = easy HTTP handling
+- Cold start: ~1-2 seconds (acceptable)
+
+## GitHub Actions Workflow Explained
+
+```yaml
+# Trigger: On every push to main
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  deploy:
+    steps:
+      # 1. Train model with latest data
+      - python src/multi_ticker_loader.py  # Download fresh ETF data
+      - python src/train_ensemble_multi.py  # Train ensemble (R²=0.9986)
+      
+      # 2. Build Docker image for x86_64
+      - docker build --platform linux/amd64 -t image .
+      
+      # 3. Push to ECR
+      - docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
+      
+      # 4. Update Lambda function
+      - aws lambda update-function-code --image-uri <new-image>
+```
+
+**Advantages:**
+- Retrains model with latest data on every deploy
+- Ensures Linux x86_64 compatibility (not Mac ARM64)
+- Zero-downtime deployment
+- Full automation
+
+## Troubleshooting
+
+### Issue: ONNX dimension mismatch
+```
+Error: Got invalid dimensions for input: Expected 10, Got 12
+```
+**Fix**: Retrain ONNX model with correct 12-feature multi-ticker data
+
+### Issue: Cold start timeout
+```
+Task timed out after 3.00 seconds
+```
+**Fix**: Increase Lambda timeout to 30 seconds in configuration
+
+### Issue: Import error NumPy version
+```
+ImportError: NumPy version mismatch
+```
+**Fix**: Use Docker build with `--platform linux/amd64` (not Mac ARM)
 
 ## Cost Optimization Tips
 

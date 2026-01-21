@@ -10,8 +10,9 @@
 |-------|----------|------|--------|---------------|
 | **Phase 1** | Single-ticker LSTM | 570 samples | R²=0.111  | Underfitting on small data |
 | **Phase 2** | Hyperparameter tuning | 570 samples | R²=0.111  | Tuning can't fix data scarcity |
+| **Phase 2.5** | Single-ticker Ensemble | 570 samples | R²=-0.15  | Ensemble fails when base models overfit |
 | **Phase 3** | Multi-ticker LSTM | 7,666 samples | R²=0.9826  | **Data quality > Model complexity** |
-| **Phase 4** | Multi-ticker Ensemble | 7,666 samples | **R²=0.9986**  | **Combination of diverse models wins** |
+| **Phase 4** | Multi-ticker Ensemble | 7,666 samples | **R²=0.9986**  | **Ensemble works with diverse data** |
 
 **Performance**: 88x improvement (R²: 0.111 → 0.9986) | **Data scaling**: 13.4x more samples | **Production ready**: AWS Lambda deployment + MLflow tracking
 
@@ -28,20 +29,22 @@
 
 ---
 
-## 📁 Project Structure
+## Project Structure
 
 ```
 Financial-forecasting-pipeline/
 ├── src/                              # Source code
-│   ├── train.py                     # Training with early stopping
-│   ├── train_ensemble_multi.py      # Multi-ticker ensemble training
+│   ├── train_single_ticker.py       # Single-ticker LSTM training
+│   ├── train_multi_ticker.py        # Multi-ticker LSTM training
+│   ├── train_ensemble_single.py     # Single-ticker ensemble (failed)
+│   ├── train_ensemble_multi.py      # Multi-ticker ensemble training (R²=0.9986)
 │   ├── model.py                     # LSTM + Attention architecture
 │   ├── features.py                  # Feature engineering pipeline
 │   ├── evaluate.py                  # Evaluation metrics
-│   ├── data_loader.py               # Data loading utilities
+│   ├── single_ticker_loader.py      # Single-ticker data loader
 │   ├── multi_ticker_loader.py       # Download 4 ETF data (SPY, QQQ, DIA, IWM)
 │   ├── run_experiments.py           # A/B/C experiment runner
-│   └── lambda_handler.py            # AWS Lambda serverless handler
+│   └── app.py                       # AWS Lambda FastAPI handler (ONNX)
 ├── config/
 │   └── main.yaml                    # Hydra experiment config
 ├── data/
@@ -62,7 +65,7 @@ Financial-forecasting-pipeline/
 └── README.md                        # This file
 ```
 
-## ✨ Key Features
+## Key Features
 
 - **LSTM with Attention** - Captures temporal dependencies efficiently
 - **Ensemble stacking** - LSTM + Linear + ARIMA for robustness  
@@ -77,7 +80,7 @@ Financial-forecasting-pipeline/
 
 ##  Phase-by-Phase Journey
 
-### Phase 1️⃣ : Single-Ticker Attempt (USAR)
+### Phase 1 : Single-Ticker Attempt (USAR)
 **Challenge**: Predict single stock (USAR IPO July 2023) with only 570 training samples
 
 **What I tried**:
@@ -92,7 +95,40 @@ Financial-forecasting-pipeline/
 
 **Key insight**:  **Tuning hyperparameters can't fix broken data**
 
-### Phase 2: Multi-Ticker Training (SPY + QQQ + DIA + IWM)
+### Phase 2: Hyperparameter Tuning (A/B/C Testing)
+**Question**: Can better hyperparameters fix the underfitting?
+
+**What I tried**:
+- **Config A** (Conservative): hidden=64, 2 layers, dropout=0.1 → R²=0.835
+- **Config B** (Optimized): hidden=128, 3 layers, dropout=0.05 → R²=0.111
+- **Config C** (Aggressive): hidden=256, 3 layers, dropout=0.15, lr=0.02 → R²=-2.66 (diverged)
+
+**Why it failed**: 
+- All configs plateau around R²=0.1-0.8 range
+- Even simple models (Config A) couldn't break past this ceiling
+- Learning rate too high (Config C) caused training instability
+
+**Key insight**: **This is a data problem, not a tuning problem**
+
+### Phase 2.5: Single-Ticker Ensemble Attempt
+**Hypothesis**: Combine LSTM + Linear + ARIMA to boost predictions
+
+**What I tried**:
+```python
+LSTM R²: 0.111
+Linear R²: -0.15 (overfitted on 605 samples)
+ARIMA: Failed to converge
+Ensemble R²: -0.15  # WORSE than LSTM alone
+```
+
+**Why it failed**:
+1. **Insufficient data**: 605 samples → each model overfits independently
+2. **No diversity**: All models learn same noisy patterns from small dataset
+3. **Ensemble amplifies overfitting**: Averaging 3 overfitted models = still overfitted
+
+**Key insight**: **Ensemble requires well-generalized base models**
+
+### Phase 3: Multi-Ticker Training (SPY + QQQ + DIA + IWM)
 **Insight**: Instead of predicting one stock, train on related market ETFs (4x more data)
 
 **Approach**:
@@ -102,7 +138,7 @@ python src/multi_ticker_loader.py
 # Result: 11,112 total samples → 7,666 training after sequences
 
 # Train LSTM on combined data
-python src/train.py  # Same model architecture, better data
+python src/train_multi_ticker.py  # Same model architecture, better data
 ```
 
 **Results**:
@@ -111,8 +147,8 @@ python src/train.py  # Same model architecture, better data
 
 **Why it worked**:  **Data quality > Model complexity. Implicit transfer learning across related tickers.**
 
-### Phase 3️⃣ : Ensemble Stacking
-**Hypothesis**: Multiple models capture different aspects of the time series
+### Phase 4: Multi-Ticker Ensemble
+**Hypothesis**: With sufficient data, diverse models should ensemble effectively
 
 **Implementation**:
 ```python
@@ -123,7 +159,7 @@ ensemble = 0.50 * LSTM(R²=0.9826) + 0.48 * Linear(R²=0.996) + 0.02 * ARIMA(AIC
 
 **Insight**:  **Ensemble adds marginal value with sufficient diverse data (0.16% gain). Linear model surprisingly competitive.**
 
-### Phase 4️⃣ : MLOps & Deployment
+### Phase 5: MLOps & Production Deployment
 **Deliverables**:
 -  MLflow tracking: All experiments logged with metrics/params/artifacts
 -  AWS Lambda handler: Serverless inference (~100ms, $0.35/month)
@@ -229,7 +265,7 @@ Ensemble R²: 0.9986  #  +0.16% over LSTM alone
 **What is Transfer Learning?**
 Use knowledge from related domain (SPY, QQQ, DIA, IWM) to improve target prediction (USAR).
 
-**How we applied it (implicitly)**:
+**How I applied it (implicitly)**:
 ```python
 # Step 1: Train on 4 related ETFs (all track US equity markets)
 train_data = combine([SPY, QQQ, DIA, IWM])  # 7,666 samples, 11+ years
@@ -332,7 +368,7 @@ Each MLflow run captures:
 
 **Metrics**:
 - Per-epoch train/validation loss curves
-- Final test NLL, MAE, MSE
+- Final test MSE, MAE, RMSE
 - Uncertainty calibration (1σ coverage)
 - Inference latency (ms)
 - Total runtime
@@ -348,7 +384,7 @@ Each MLflow run captures:
 **Artifacts**:
 - Loss curves plot (train/val over epochs)
 - Prediction vs actual plot
-- Feature statistics (means/stds for drift monitoring)
+- Feature statistics
 - Scaler (StandardScaler for inference)
 - Feature list (column names)
 - Run config (Hydra YAML snapshot)
@@ -366,7 +402,9 @@ pip install -r requirements-dev.txt
 mlflow ui --backend-store-uri sqlite:///mlruns.db --host 127.0.0.1 --port 5000
 
 # In a new terminal, run training
-python src/train.py
+python src/train_single_ticker.py  # Single-ticker training
+# OR for multi-ticker (recommended):
+python src/train_multi_ticker.py
 
 # View results at http://127.0.0.1:5000
 # Navigate to experiment "Financial-forecasting-pipeline"
@@ -374,11 +412,11 @@ python src/train.py
 
 ### Run Custom Experiment
 ```bash
-# Override hyperparameters with Hydra
-python src/train.py model.learning_rate=0.0001 model.dropout=0.3
+# Override hyperparameters with Hydra (single-ticker)
+python src/train_single_ticker.py model.learning_rate=0.0001 model.dropout=0.3
 
-# Run with different window size
-python src/train.py data.window_size=30 model.hidden_dim=128
+# Multi-ticker with different window size
+python src/train_multi_ticker.py data.window_size=30 model.hidden_dim=128
 ```
 
 ### Reproducing Results
@@ -401,7 +439,6 @@ All runs are tracked with full reproducibility:
   - `features.txt` - Feature column names
   - `run_config.yaml` - Full Hydra configuration
   - `run_summary.json` - Key metrics at a glance
-  - `feature_stats.json` - Train/test statistics for drift detection
 
 ##  AWS Lambda Deployment
 
@@ -430,27 +467,14 @@ class StockPredictor(nn.Module):
 
 ##  Loss Function
 
-**Gaussian Negative Log Likelihood (NLL)**:
+**Mean Squared Error (MSE)**:
 ```
-Loss = 0.5 * log(σ²) + (y - μ)² / (2σ²)
+Loss = (1/N) * Σ(y_pred - y_true)²
 ```
 
-This penalizes both:
-1. Incorrect predictions (second term)
-2. Overconfident predictions (first term)
+MSE penalizes larger errors more heavily due to squaring, making it suitable for regression tasks where outliers should be minimized.
 
-##  Next Steps
 
-- [x] Production-grade MLflow tracking with full provenance
-- [x] Comprehensive artifact logging (models, plots, configs)
-- [x] Reproducible experiments with seed/hash tracking
-- [x] Fix underfitting by increasing patience (5 → 15)
-- [x] **Multi-ticker training** - Expanded from 570 → 7,666 samples (13.4x)
-- [x] **Ensemble implementation** - LSTM + Linear + ARIMA achieving R²=0.9986
-- [ ] **Deploy to AWS Lambda** with API Gateway
-- [ ] **Data drift detection** with Evidently
-- [ ] **Model monitoring** dashboard (Prometheus + Grafana)
-- [ ] **CI/CD pipeline** with DVC for data versioning
 
 ---
 
@@ -600,7 +624,7 @@ Final Result: 605 samples (R²=0.111) → 7,666 samples (R²=0.9986)
 3. **Multi-task learning**: Predict [price, direction, volatility] simultaneously
 
 ### Production Hardening
-1. **Live monitoring**: Track prediction error drift, retrain monthly
+1. **Live monitoring**: Track prediction error trends, retrain monthly
 2. **Uncertainty quantification**: Use Monte Carlo Dropout for confidence intervals
 3. **Paper trading**: Validate strategy before capital deployment
 
@@ -640,7 +664,7 @@ python src/multi_ticker_loader.py
 python src/train_ensemble_multi.py
 
 # Train single-ticker (for comparison)
-python src/train.py
+python src/train_single_ticker.py
 
 # View results
 ls models/  # Check saved models
@@ -674,20 +698,20 @@ finetune_on_usar(pretrained, usar_data)  # Transfer learning
 # Strategy 3: Ensemble
 ensemble = EnsemblePredictor(lstm, linear, arima)
 prediction = ensemble.predict(usar_features)  # R²=0.9986
-```
+
 
 ### Model Monitoring
 - **Retrain frequency**: Monthly with new market data
-- **Drift detection**: Compare test R² over time (alert if drops >5%)
 - **Performance tracking**: Log MAE, RMSE, directional accuracy daily
 
 ---
-
+```
 # Run experiments (examples)
-python src/train.py  # Best config
-python src/train.py model.hidden_dim=256  # Larger model
-python src/train.py model.dropout=0.3  # More regularization
-python src/train.py data.window_size=90  # Longer lookback
+python src/train_single_ticker.py  # Single-ticker
+python src/train_multi_ticker.py   # Multi-ticker
+python src/train_multi_ticker.py model.hidden_dim=256  # Larger model
+python src/train_multi_ticker.py model.dropout=0.3  # More regularization
+python src/train_multi_ticker.py data.window_size=90  # Longer lookback
 
 # View artifacts
 ls mlruns/1/{run_id}/artifacts/
