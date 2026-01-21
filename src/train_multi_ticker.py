@@ -56,7 +56,7 @@ def train_on_multi_ticker(cfg: DictConfig):
     joblib.dump(scaler, "models/scaler_multi_ticker.pkl")
     
     # Create sequences
-    from train import create_sequences
+    from src.train_single_ticker import create_sequences
     X, y = create_sequences(data_scaled, cfg.data.window_size)
     
     print(f"Sequence data: X shape={X.shape}, y shape={y.shape}")
@@ -106,7 +106,7 @@ def main(cfg: DictConfig):
     print("\n=== Training on Multi-Ticker Data ===")
     
     # Training loop (simplified - full version in train.py)
-    from train import EarlyStopping
+    from src.train_single_ticker import EarlyStopping
     early_stopper = EarlyStopping(patience=cfg.model.patience)
     
     for epoch in range(cfg.model.epochs):
