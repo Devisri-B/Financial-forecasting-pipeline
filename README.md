@@ -101,6 +101,3 @@ python src/train_ensemble_multi.py                  # Train best model
 - `models/scaler_ensemble_multi.pkl` - StandardScaler
 - `models/model.onnx` - Production ONNX export
 
----
-
-**Status**: Production Ready | **Last updated**: January 2026
