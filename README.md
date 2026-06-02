@@ -1,6 +1,22 @@
 # Financial-forecasting-pipeline
 
-**Production-grade financial forecasting with 88x performance improvement through systematic experimentation, data scaling, and MLOps best practices.**
+**An end-to-end LSTM/ensemble forecasting pipeline with Hydra config, MLflow tracking, ONNX export, and a FastAPI/Lambda serving layer.**
+
+---
+
+> ### ⚠️ Correction: the headline "R² = 0.9985 / 99% accuracy" was a data artifact, now fixed
+>
+> The original pipeline trained the model to predict the **next-day raw closing price**.
+> Stock prices are almost perfectly autocorrelated (tomorrow ≈ today), so *any* model —
+> even "predict yesterday's price" — scores R² ≈ 0.99. That number measured
+> autocorrelation, **not predictive skill**, and the "no overfitting" claim was unfounded.
+>
+> **Fix applied:** the target is now the **next-day log return** (a stationary series),
+> the scaler is fit on **training data only** (no look-ahead leakage), and sequences are
+> built **per ticker** (no cross-ticker contamination). With these corrections the honest
+> test R² is **near 0** (often slightly negative) and directional accuracy is **~50–65%** —
+> the realistic range for daily return forecasting. The metric tables further down this
+> README reflect the *old, inflated* numbers and are kept only for historical context.
 
 ---
 

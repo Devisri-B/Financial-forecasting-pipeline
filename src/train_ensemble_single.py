@@ -133,16 +133,16 @@ class EnsemblePredictor:
                 X_linear = X
             predictions[:, 1] = self.linear_model.predict(X_linear)
         
-        # 3. ARIMA predictions (use last value as naive forecast)
+        # 3. ARIMA predictions: one 1-step forecast, broadcast to all samples.
+        #    (Computing it once is correct AND avoids an O(n_samples) loop that
+        #    recomputed the identical value. np.asarray handles both the numpy-
+        #    and pandas-backed return types of statsmodels.)
         if self.arima_model is not None:
-            # ARIMA expects single series, so use simple walk-forward
-            for i in range(n_samples):
-                try:
-                    # For each sample, assume it's a continuation of training series
-                    pred = self.arima_model.get_forecast(steps=1).predicted_mean.values[0]
-                    predictions[i, 2] = pred
-                except:
-                    predictions[i, 2] = predictions[i, 0]  # Fallback to LSTM
+            try:
+                fc = self.arima_model.get_forecast(steps=1).predicted_mean
+                predictions[:, 2] = float(np.asarray(fc).ravel()[0])
+            except Exception:
+                predictions[:, 2] = predictions[:, 0]  # Fallback to LSTM
         else:
             predictions[:, 2] = predictions[:, 0]  # Fallback to LSTM
         

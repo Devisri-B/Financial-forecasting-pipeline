@@ -52,11 +52,18 @@ def set_seeds(seed: int):
     torch.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
 
-def create_sequences(data, seq_length):
+def create_sequences(data, seq_length, target_col=0):
+    """Build (X, y) sliding-window sequences.
+
+    target_col selects which column to forecast. For honest financial
+    forecasting this should point at a *stationary* target (log returns),
+    NOT the raw price level: raw prices are almost perfectly autocorrelated
+    (tomorrow ~= today), so predicting them yields a meaningless R2 ~ 0.99.
+    """
     xs, ys = [], []
     for i in range(len(data) - seq_length):
         x = data[i:(i + seq_length)]
-        y = data[i + seq_length][0] 
+        y = data[i + seq_length][target_col]
         xs.append(x)
         ys.append(y)
     return np.array(xs), np.array(ys)
@@ -123,20 +130,32 @@ def train_pipeline(cfg: DictConfig):
         os.makedirs(os.path.dirname(cfg.data.processed_path), exist_ok=True)
         df_processed.to_csv(cfg.data.processed_path)
         
-        # 2. Scale Data
+        # 2. Pick a STATIONARY target: predict next-day log return, not raw price.
+        #    Predicting the raw price gives a fake R2 ~ 0.99 because prices are
+        #    almost perfectly autocorrelated. Returns are the honest target.
+        target_col = df_processed.columns.get_loc("log_ret")
+        data_values = df_processed.values
+
+        # 3. Create Sequences on RAW values, THEN split chronologically.
+        X_all, y_all = create_sequences(data_values, cfg.data.window_size, target_col=target_col)
+
+        train_size = int(len(X_all) * (1 - cfg.data.test_size))
+        X_train_raw, X_test_raw = X_all[:train_size], X_all[train_size:]
+        y_train, y_test = y_all[:train_size], y_all[train_size:]
+
+        # 4. Scale features using TRAIN statistics ONLY (no look-ahead leakage).
+        n_features = X_train_raw.shape[-1]
         scaler = StandardScaler()
-        data_scaled = scaler.fit_transform(df_processed)
-        
+        scaler.fit(X_train_raw.reshape(-1, n_features))
+        X_train = scaler.transform(X_train_raw.reshape(-1, n_features)).reshape(X_train_raw.shape)
+        X_test = scaler.transform(X_test_raw.reshape(-1, n_features)).reshape(X_test_raw.shape)
+
         os.makedirs("models", exist_ok=True)
         joblib.dump(scaler, "models/scaler.pkl")
-        
-        # 3. Create Sequences
-        X, y = create_sequences(data_scaled, cfg.data.window_size)
-        
-        # Split Train/Test
-        train_size = int(len(X) * (1 - cfg.data.test_size))
-        X_train, X_test = X[:train_size], X[train_size:]
-        y_train, y_test = y[:train_size], y[train_size:]
+
+        # Naive baseline: predict "no change" (return = 0). An honest model must
+        # beat this. For prices a naive baseline scores R2 ~ 0.99; for returns ~ 0.
+        naive_rmse = float(np.sqrt(np.mean(y_test ** 2)))
 
         mlflow.log_params({
             "train_size": len(X_train),
@@ -238,7 +257,7 @@ def train_pipeline(cfg: DictConfig):
         # Get final train predictions for comparison
         with torch.no_grad():
             train_pred = model(X_train)
-            train_mse = torch.mean((X_train.shape[0] * (train_pred - y_train) ** 2))
+            train_mse = torch.mean((train_pred - y_train) ** 2)
         
         overfitting_ratio = rmse.item() / (torch.sqrt(train_mse).item() + 1e-6)
 
@@ -247,6 +266,15 @@ def train_pipeline(cfg: DictConfig):
         with torch.no_grad():
             _ = model(X_test[:1])
         inference_ms = (time.perf_counter() - start_inf) * 1000
+
+        # Directional accuracy: did we predict the sign of the return correctly?
+        # This is the meaningful metric for return forecasting (50% = coin flip).
+        pred_dir = (pred.detach().cpu().numpy().flatten() > 0)
+        true_dir = (y_test.detach().cpu().numpy().flatten() > 0)
+        directional_accuracy = float(np.mean(pred_dir == true_dir)) * 100
+
+        # Skill vs naive "predict zero return" baseline. Positive => model adds value.
+        skill_vs_naive = 1.0 - (rmse.item() / (naive_rmse + 1e-12))
 
         mlflow.log_metrics({
             "mae": mae.item(),
@@ -258,12 +286,29 @@ def train_pipeline(cfg: DictConfig):
             "std_residual": std_residual.item(),
             "overfitting_ratio": overfitting_ratio,
             "inference_ms": inference_ms,
+            "naive_rmse": naive_rmse,
+            "skill_vs_naive": skill_vs_naive,
+            "directional_accuracy": directional_accuracy,
         })
+
+        print(
+            f"\n=== Honest test metrics (target = next-day log return) ===\n"
+            f"  R2:                  {r_squared.item():.4f}   (<= 0 means no better than predicting the mean)\n"
+            f"  RMSE:                {rmse.item():.6f}\n"
+            f"  Naive RMSE (zero):   {naive_rmse:.6f}\n"
+            f"  Skill vs naive:      {skill_vs_naive:+.4f}   (negative => worse than 'no change')\n"
+            f"  Directional accuracy:{directional_accuracy:.2f}%   (~50% = coin flip)\n"
+        )
         
-        # Save RMSE for reference
+        # Save calibration metrics. Keep a header on line 0 so the API
+        # (src/app.py) can reliably read RMSE from line index 1.
         os.makedirs(os.path.dirname(cfg.deployment.calibration_path), exist_ok=True)
         with open(cfg.deployment.calibration_path, "w") as f:
-            f.write(f"RMSE: {rmse.item():.4f}\nMAE: {mae.item():.4f}")
+            f.write(
+                f"=== Single-Ticker Test Metrics ===\n"
+                f"RMSE: {rmse.item():.4f}\n"
+                f"MAE: {mae.item():.4f}\n"
+            )
             
         # 7. Export to ONNX (Two outputs!)
         artifacts_dir = "artifacts"
@@ -304,29 +349,18 @@ def train_pipeline(cfg: DictConfig):
         plt.savefig(loss_plot_path, dpi=100, bbox_inches='tight')
         plt.close()
 
-        # Inverse transform predictions back to original scale for interpretable plots
-        # Note: We're predicting the first feature (Close price) which is at index 0
+        # Target is the (unscaled) next-day log return, so we plot it directly.
+        # No inverse transform needed: the scaler was fit on FEATURES only.
         y_test_np = y_test.detach().cpu().numpy().flatten()
         pred_np = pred.detach().cpu().numpy().flatten()
-        
-        # Create dummy arrays with all features for inverse transform
-        # (scaler expects all features, we only care about first one)
-        y_test_full = np.zeros((len(y_test_np), data_scaled.shape[1]))
-        pred_full = np.zeros((len(pred_np), data_scaled.shape[1]))
-        y_test_full[:, 0] = y_test_np
-        pred_full[:, 0] = pred_np
-        
-        # Inverse transform to get original price scale
-        y_test_original = scaler.inverse_transform(y_test_full)[:, 0]
-        pred_original = scaler.inverse_transform(pred_full)[:, 0]
-        
+
         plt.figure(figsize=(12, 6))
-        plt.plot(y_test_original, label="Actual", linewidth=2, alpha=0.8)
-        plt.plot(pred_original, label="Predicted", linewidth=2, alpha=0.8)
+        plt.plot(y_test_np, label="Actual", linewidth=2, alpha=0.8)
+        plt.plot(pred_np, label="Predicted", linewidth=2, alpha=0.8)
         plt.xlabel("Time Step")
-        plt.ylabel("Stock Price")
+        plt.ylabel("Log Return")
         plt.legend()
-        plt.title("Prediction vs Actual (Original Scale)")
+        plt.title("Prediction vs Actual (Next-Day Log Return)")
         plt.grid(True, alpha=0.3)
         pred_plot_path = os.path.join(artifacts_dir, "pred_vs_actual.png")
         plt.savefig(pred_plot_path, dpi=100, bbox_inches='tight')

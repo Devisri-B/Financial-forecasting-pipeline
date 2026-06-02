@@ -1,5 +1,6 @@
 import matplotlib.pyplot as plt
 import numpy as np
+import os
 
 # Performance comparison
 models = ['Single-Ticker\nLSTM\n(570 samples)', 'Multi-Ticker\nLSTM\n(7,666 samples)', 'Multi-Ticker\nEnsemble\n(7,666 samples)']
@@ -47,6 +48,7 @@ ax2.annotate(f'{lstm_r2[1]:.4f}', xy=(sample_sizes[1], lstm_r2[1]),
              arrowprops=dict(arrowstyle='->', color='black', lw=1.5))
 
 plt.tight_layout()
+os.makedirs('outputs', exist_ok=True)
 plt.savefig('outputs/performance_comparison.png', dpi=150, bbox_inches='tight')
 print(' Saved performance comparison to outputs/performance_comparison.png')
 print(f'   Single-ticker LSTM: R²={r2_scores[0]:.3f}')

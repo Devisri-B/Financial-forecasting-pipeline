@@ -48,31 +48,44 @@ class ExperimentRunner:
             ticker_processed = feature_engineer.transform(ticker_df)
             processed_data.append(ticker_processed)
         
-        all_features = pd.concat(processed_data, ignore_index=True)
-        
-        # Normalize
-        feature_cols = [col for col in all_features.columns if col != 'Close']
-        data = all_features[feature_cols + ['Close']].values
-        
-        scaler = StandardScaler()
-        data_scaled = scaler.fit_transform(data)
-        
-        # Create sequences
-        X, y = create_sequences(data_scaled, self.cfg.data.window_size)
-        
-        # Split
+        # Target = next-day log return (stationary). Build sequences PER TICKER
+        # so windows never span two tickers.
+        target_col = list(processed_data[0].columns).index("log_ret")
+        X_parts, y_parts = [], []
+        for ticker_processed in processed_data:
+            Xi, yi = create_sequences(
+                ticker_processed.values, self.cfg.data.window_size, target_col=target_col
+            )
+            if len(Xi):
+                X_parts.append(Xi)
+                y_parts.append(yi)
+        X = np.concatenate(X_parts, axis=0)
+        y = np.concatenate(y_parts, axis=0)
+
+        # Split BEFORE scaling, then fit the scaler on TRAIN ONLY (no leakage).
         n = len(X)
         train_idx = int(n * 0.7)
         val_idx = int(n * 0.85)
-        
+
+        n_features = X.shape[2]
+        scaler = StandardScaler()
+        scaler.fit(X[:train_idx].reshape(-1, n_features))
+
+        def _scale(arr):
+            return scaler.transform(arr.reshape(-1, n_features)).reshape(arr.shape)
+
+        X_train = _scale(X[:train_idx])
+        X_val = _scale(X[train_idx:val_idx])
+        X_test = _scale(X[val_idx:])
+
         return {
-            'X_train': torch.FloatTensor(X[:train_idx]).to(self.device),
+            'X_train': torch.FloatTensor(X_train).to(self.device),
             'y_train': torch.FloatTensor(y[:train_idx]).unsqueeze(1).to(self.device),
-            'X_val': torch.FloatTensor(X[train_idx:val_idx]).to(self.device),
+            'X_val': torch.FloatTensor(X_val).to(self.device),
             'y_val': torch.FloatTensor(y[train_idx:val_idx]).unsqueeze(1).to(self.device),
-            'X_test': torch.FloatTensor(X[val_idx:]).to(self.device),
+            'X_test': torch.FloatTensor(X_test).to(self.device),
             'y_test': torch.FloatTensor(y[val_idx:]).unsqueeze(1).to(self.device),
-            'input_dim': X.shape[2],
+            'input_dim': n_features,
             'scaler': scaler,
         }
     

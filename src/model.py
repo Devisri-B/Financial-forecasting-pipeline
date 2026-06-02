@@ -18,11 +18,11 @@ class StockPredictor(nn.Module):
         super(StockPredictor, self).__init__()
         
         self.lstm = nn.LSTM(
-            input_dim, 
-            hidden_dim, 
-            num_layers, 
-            batch_first=True, 
-            dropout=dropout
+            input_dim,
+            hidden_dim,
+            num_layers,
+            batch_first=True,
+            dropout=dropout if num_layers > 1 else 0,
         )
         self.attention = Attention(hidden_dim)
         self.fc = nn.Linear(hidden_dim, output_dim)

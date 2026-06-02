@@ -39,42 +39,51 @@ def train_on_multi_ticker(cfg: DictConfig):
         processed_data.append(ticker_processed)
         print(f"  {ticker}: {len(ticker_processed)} samples after feature engineering")
     
-    # Combine all processed data
-    all_features = pd.concat(processed_data, ignore_index=True)
-    print(f"\n Total training samples after feature engineering: {len(all_features)}")
-    
-    # Prepare data
-    feature_cols = [col for col in all_features.columns if col != 'Close']
-    data = all_features[feature_cols + ['Close']].values
-    
-    # Normalize
+    total_rows = sum(len(p) for p in processed_data)
+    print(f"\n Total training samples after feature engineering: {total_rows}")
+
+    # Target = next-day log return (stationary). Build sequences PER TICKER so a
+    # window never spans two tickers (no cross-ticker contamination).
+    from train_single_ticker import create_sequences
+    target_col = list(processed_data[0].columns).index("log_ret")
+    X_parts, y_parts = [], []
+    for ticker_processed in processed_data:
+        Xi, yi = create_sequences(
+            ticker_processed.values, cfg.data.window_size, target_col=target_col
+        )
+        if len(Xi):
+            X_parts.append(Xi)
+            y_parts.append(yi)
+    X = np.concatenate(X_parts, axis=0)
+    y = np.concatenate(y_parts, axis=0)
+
+    print(f"Sequence data: X shape={X.shape}, y shape={y.shape}")
+
+    # Split BEFORE scaling, then fit scaler on TRAIN ONLY (no look-ahead leakage).
+    split_idx = int(len(X) * (1 - cfg.data.test_size))
+    n_features = X.shape[2]
     scaler = StandardScaler()
-    data_scaled = scaler.fit_transform(data)
-    
+    scaler.fit(X[:split_idx].reshape(-1, n_features))
+
+    def _scale(arr):
+        return scaler.transform(arr.reshape(-1, n_features)).reshape(arr.shape)
+
+    X_train, X_test = _scale(X[:split_idx]), _scale(X[split_idx:])
+    y_train, y_test = y[:split_idx], y[split_idx:]
+
     # Save scaler
     os.makedirs("models", exist_ok=True)
     joblib.dump(scaler, "models/scaler_multi_ticker.pkl")
-    
-    # Create sequences
-    from src.train_single_ticker import create_sequences
-    X, y = create_sequences(data_scaled, cfg.data.window_size)
-    
-    print(f"Sequence data: X shape={X.shape}, y shape={y.shape}")
-    
-    # Train/test split
-    split_idx = int(len(X) * (1 - cfg.data.test_size))
-    X_train, X_test = X[:split_idx], X[split_idx:]
-    y_train, y_test = y[:split_idx], y[split_idx:]
-    
+
     print(f"Train: {len(X_train)} | Test: {len(X_test)}")
-    
+
     return {
         'X_train': X_train,
         'y_train': y_train,
         'X_test': X_test,
         'y_test': y_test,
         'scaler': scaler,
-        'n_features': X_train.shape[2]
+        'n_features': n_features,
     }
 
 @hydra.main(config_path="../config", config_name="main", version_base=None)
@@ -106,7 +115,7 @@ def main(cfg: DictConfig):
     print("\n=== Training on Multi-Ticker Data ===")
     
     # Training loop (simplified - full version in train.py)
-    from src.train_single_ticker import EarlyStopping
+    from train_single_ticker import EarlyStopping
     early_stopper = EarlyStopping(patience=cfg.model.patience)
     
     for epoch in range(cfg.model.epochs):

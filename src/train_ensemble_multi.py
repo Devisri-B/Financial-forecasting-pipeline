@@ -57,15 +57,24 @@ def train_ensemble_multi_ticker(cfg: DictConfig):
             processed_data.append(ticker_processed)
             print(f"  {ticker}: {len(ticker_processed)} samples")
         
-        all_features = pd.concat(processed_data, ignore_index=True)
-        print(f"\n Total: {len(all_features)} samples after feature engineering")
-        
-        # Prepare data (NO scaling yet - avoid look-ahead bias)
-        feature_cols = [col for col in all_features.columns if col != 'Close']
-        data = all_features[feature_cols + ['Close']].values
-        
-        # Create sequences BEFORE scaling/splitting
-        X, y = create_sequences(data, cfg.data.window_size)
+        total_rows = sum(len(p) for p in processed_data)
+        print(f"\n Total: {total_rows} samples after feature engineering")
+
+        # Target = next-day log return (stationary). Predicting raw price gives a
+        # fake R2 ~ 0.99 due to autocorrelation. Build sequences PER TICKER so a
+        # window never spans two different tickers (no cross-ticker contamination).
+        target_col = list(processed_data[0].columns).index("log_ret")
+
+        X_parts, y_parts = [], []
+        for ticker_processed in processed_data:
+            Xi, yi = create_sequences(
+                ticker_processed.values, cfg.data.window_size, target_col=target_col
+            )
+            if len(Xi):
+                X_parts.append(Xi)
+                y_parts.append(yi)
+        X = np.concatenate(X_parts, axis=0)
+        y = np.concatenate(y_parts, axis=0)
         print(f"Sequences: X={X.shape}, y={y.shape}")
         
         # Split: 70% train, 15% val, 15% test (BEFORE scaling)
@@ -178,8 +187,8 @@ def train_ensemble_multi_ticker(cfg: DictConfig):
             lstm_train_pred = model(X_train_t)
             lstm_val_pred = model(X_val_t)
         
-        lstm_train_pred_np = lstm_train_pred.cpu().numpy()
-        lstm_val_pred_np = lstm_val_pred.cpu().numpy()
+        lstm_train_pred_np = lstm_train_pred.cpu().numpy().flatten()
+        lstm_val_pred_np = lstm_val_pred.cpu().numpy().flatten()
         
         ensemble_train_pred = ensemble.predict(X_train)
         ensemble_val_pred = ensemble.predict(X_val)
@@ -195,7 +204,7 @@ def train_ensemble_multi_ticker(cfg: DictConfig):
         # LSTM R² on all sets
         lstm_train_r2 = calc_r2(y_train, lstm_train_pred_np)
         lstm_val_r2 = calc_r2(y_val, lstm_val_pred_np)
-        lstm_test_r2 = calc_r2(y_test, lstm_pred.cpu().numpy())
+        lstm_test_r2 = calc_r2(y_test, lstm_pred.cpu().numpy().flatten())
         
         # Ensemble R² on all sets
         ensemble_train_r2 = calc_r2(y_train, ensemble_train_pred)
@@ -231,9 +240,10 @@ def train_ensemble_multi_ticker(cfg: DictConfig):
         from sklearn.metrics import mean_absolute_error
         
         # LSTM metrics (test set)
-        lstm_mae = mean_absolute_error(y_test, lstm_pred.cpu().numpy())
+        lstm_pred_flat = lstm_pred.cpu().numpy().flatten()
+        lstm_mae = mean_absolute_error(y_test, lstm_pred_flat)
         lstm_rmse = np.sqrt(lstm_mse.item())
-        lstm_mape = np.mean(np.abs((y_test - lstm_pred.cpu().numpy()) / (y_test + 1e-8))) * 100
+        lstm_mape = np.mean(np.abs((y_test - lstm_pred_flat) / (np.abs(y_test) + 1e-8))) * 100
         
         # Ensemble metrics (test set)
         ensemble_mae = mean_absolute_error(y_test, ensemble_pred)
@@ -241,8 +251,6 @@ def train_ensemble_multi_ticker(cfg: DictConfig):
         ensemble_mape = np.mean(np.abs((y_test - ensemble_pred) / (y_test + 1e-8))) * 100
         
         # Directional accuracy (% correct up/down predictions)
-        # Flatten predictions to 1D
-        lstm_pred_flat = lstm_pred.cpu().numpy().flatten()
         ensemble_pred_flat = ensemble_pred.flatten()
         y_test_flat = y_test.flatten()
         
@@ -297,7 +305,7 @@ def train_ensemble_multi_ticker(cfg: DictConfig):
             test_samples = min(200, len(y_test))
             plt.plot(y_test[:test_samples], label='Actual', linewidth=2, alpha=0.8)
             plt.plot(lstm_pred.cpu().numpy()[:test_samples], label=f'LSTM (R²={lstm_r2.item():.3f})', linestyle='--', alpha=0.7)
-            plt.plot(ensemble_pred[:test_samples], label=f'Ensemble (R²={ensemble_r2:.3f})', linestyle=':', alpha=0.7, linewidth=2)
+            plt.plot(ensemble_pred[:test_samples], label=f'Ensemble (R²={ensemble_test_r2:.3f})', linestyle=':', alpha=0.7, linewidth=2)
             plt.xlabel('Sample')
             plt.ylabel('Normalized Price')
             plt.legend()
