@@ -18,7 +18,7 @@ from model import StockPredictor
 from train_ensemble_single import EnsemblePredictor
 from sklearn.preprocessing import StandardScaler
 import joblib
-from train_single_ticker import create_sequences, EarlyStopping, set_seeds
+from train_single_ticker import create_sequences, EarlyStopping, set_seeds, train_lstm_model, direction_accuracy
 from hydra.utils import get_original_cwd
 
 @hydra.main(config_path="../config", config_name="main", version_base=None)
@@ -47,8 +47,16 @@ def train_ensemble_multi_ticker(cfg: DictConfig):
         mlflow.log_param("total_raw_samples", len(df))
         
         # Feature engineering per ticker
-        feature_engineer = FeatureEngineer(use_technical_indicators=cfg.features.use_technical_indicators)
-        
+        feature_engineer = FeatureEngineer(
+            use_technical_indicators=cfg.features.use_technical_indicators,
+            target=cfg.features.get("target", "return"),
+            vol_horizon=cfg.features.get("vol_horizon", 5),
+        )
+        mlflow.log_params({
+            "target": feature_engineer.target,
+            "vol_horizon": feature_engineer.vol_horizon,
+        })
+
         processed_data = []
         for ticker in df['Ticker'].unique():
             ticker_df = df[df['Ticker'] == ticker].copy()
@@ -60,22 +68,25 @@ def train_ensemble_multi_ticker(cfg: DictConfig):
         total_rows = sum(len(p) for p in processed_data)
         print(f"\n Total: {total_rows} samples after feature engineering")
 
-        # Target = next-day log return (stationary). Predicting raw price gives a
-        # fake R2 ~ 0.99 due to autocorrelation. Build sequences PER TICKER so a
-        # window never spans two different tickers (no cross-ticker contamination).
-        target_col = list(processed_data[0].columns).index("log_ret")
+        # Build sequences PER TICKER (no cross-ticker contamination). Features are
+        # every column EXCEPT the forward-looking target, which is passed
+        # separately so it can never leak into X.
+        target_name = feature_engineer.target_col
+        feature_cols = [c for c in processed_data[0].columns
+                        if c != FeatureEngineer.VOL_TARGET]
 
         X_parts, y_parts = [], []
-        for ticker_processed in processed_data:
+        for p in processed_data:
             Xi, yi = create_sequences(
-                ticker_processed.values, cfg.data.window_size, target_col=target_col
+                p[feature_cols].values, cfg.data.window_size,
+                target=p[target_name].values,
             )
             if len(Xi):
                 X_parts.append(Xi)
                 y_parts.append(yi)
         X = np.concatenate(X_parts, axis=0)
         y = np.concatenate(y_parts, axis=0)
-        print(f"Sequences: X={X.shape}, y={y.shape}")
+        print(f"Predicting '{target_name}'  |  Sequences: X={X.shape}, y={y.shape}")
         
         # Split: 70% train, 15% val, 15% test (BEFORE scaling)
         n = len(X)
@@ -119,51 +130,36 @@ def train_ensemble_multi_ticker(cfg: DictConfig):
         input_dim = X_train.shape[2]
         model = StockPredictor(input_dim, cfg.model.hidden_dim, cfg.model.num_layers, dropout=cfg.model.dropout).to(device)
         
-        optimizer = torch.optim.Adam(model.parameters(), lr=cfg.model.learning_rate)
         criterion = nn.MSELoss()
-        early_stopper = EarlyStopping(patience=cfg.model.patience)
-        
+        batch_size = int(cfg.model.get("batch_size", 64))
+        weight_decay = float(cfg.model.get("weight_decay", 1e-4))
+        grad_clip = float(cfg.model.get("grad_clip", 1.0))
+
         mlflow.log_params({
             "learning_rate": cfg.model.learning_rate,
             "hidden_dim": cfg.model.hidden_dim,
             "num_layers": cfg.model.num_layers,
             "dropout": cfg.model.dropout,
             "patience": cfg.model.patience,
+            "batch_size": batch_size,
+            "weight_decay": weight_decay,
+            "grad_clip": grad_clip,
         })
-        
-        print("\n=== Training LSTM ===")
-        train_losses, val_losses = [], []
-        
-        for epoch in range(cfg.model.epochs):
-            model.train()
-            optimizer.zero_grad()
-            
-            pred = model(X_train_t)
-            loss = criterion(pred, y_train_t)
-            
-            loss.backward()
-            optimizer.step()
-            
-            # Validation
-            model.eval()
-            with torch.no_grad():
-                val_pred = model(X_val_t)
-                val_loss = criterion(val_pred, y_val_t)
-            
-            train_losses.append(loss.item())
-            val_losses.append(val_loss.item())
-            
+
+        print("\n=== Training LSTM (mini-batch + grad-clip + LR schedule) ===")
+
+        def _log_epoch(epoch, train_loss, val_loss):
             if epoch % 10 == 0:
-                print(f"Epoch {epoch}: Train={loss.item():.4f} | Val={val_loss.item():.4f}")
-            
-            mlflow.log_metrics({"train_loss": loss.item(), "val_loss": val_loss.item()}, step=epoch)
-            
-            early_stopper(val_loss.item(), model)
-            if early_stopper.early_stop:
-                print(f"Early stopping at epoch {epoch}")
-                model.load_state_dict(early_stopper.best_model_state)
-                break
-        
+                print(f"Epoch {epoch}: Train={train_loss:.6f} | Val={val_loss:.6f}")
+            mlflow.log_metrics({"train_loss": train_loss, "val_loss": val_loss}, step=epoch)
+
+        train_losses, val_losses = train_lstm_model(
+            model, X_train_t, y_train_t, X_val_t, y_val_t,
+            epochs=cfg.model.epochs, lr=cfg.model.learning_rate,
+            batch_size=batch_size, weight_decay=weight_decay, grad_clip=grad_clip,
+            patience=cfg.model.patience, on_epoch=_log_epoch,
+        )
+
         # Test LSTM
         model.eval()
         with torch.no_grad():
@@ -233,8 +229,10 @@ def train_ensemble_multi_ticker(cfg: DictConfig):
         
         print(f"Ensemble Results: R²={ensemble_test_r2:.4f}, MSE={ensemble_mse:.4f}")
         
-        improvement = ((ensemble_test_r2 - lstm_test_r2) / abs(lstm_test_r2 + 1e-6)) * 100
-        print(f"Improvement: {improvement:+.1f}%")
+        # Absolute R2 gain of the ensemble over the LSTM (a ratio is unstable
+        # when the LSTM baseline R2 is near zero).
+        improvement = ensemble_test_r2 - lstm_test_r2
+        print(f"R2 gain vs LSTM: {improvement:+.4f}")
         
         # Calculate additional metrics
         from sklearn.metrics import mean_absolute_error
@@ -250,17 +248,13 @@ def train_ensemble_multi_ticker(cfg: DictConfig):
         ensemble_rmse = np.sqrt(ensemble_mse)
         ensemble_mape = np.mean(np.abs((y_test - ensemble_pred) / (y_test + 1e-8))) * 100
         
-        # Directional accuracy (% correct up/down predictions)
+        # Direction accuracy: is the prediction on the correct side of a threshold?
+        # For volatility -> high vs low vol (threshold = median of TRAIN targets).
+        # For returns     -> up vs down (threshold = 0).
         ensemble_pred_flat = ensemble_pred.flatten()
-        y_test_flat = y_test.flatten()
-        
-        # Calculate direction changes (ignoring first sample)
-        y_test_direction = np.diff(y_test_flat) > 0
-        lstm_direction = np.diff(lstm_pred_flat) > 0
-        ensemble_direction = np.diff(ensemble_pred_flat) > 0
-        
-        lstm_dir_accuracy = np.mean(y_test_direction == lstm_direction) * 100
-        ensemble_dir_accuracy = np.mean(y_test_direction == ensemble_direction) * 100
+        dir_threshold = float(np.median(y_train)) if feature_engineer.target == "volatility" else 0.0
+        lstm_dir_accuracy = direction_accuracy(y_test, lstm_pred_flat, dir_threshold)
+        ensemble_dir_accuracy = direction_accuracy(y_test, ensemble_pred_flat, dir_threshold)
         
         # Log metrics
         mlflow.log_metrics({
@@ -280,7 +274,7 @@ def train_ensemble_multi_ticker(cfg: DictConfig):
             "ensemble_test_mae": ensemble_mae,
             "ensemble_test_mape": ensemble_mape,
             "ensemble_directional_accuracy": ensemble_dir_accuracy,
-            "ensemble_improvement_pct": improvement,
+            "ensemble_r2_gain_vs_lstm": improvement,
             "overfitting_indicator_lstm": abs(lstm_val_r2 - lstm_test_r2),
             "overfitting_indicator_ensemble": abs(ensemble_val_r2 - ensemble_test_r2),
         })
@@ -349,7 +343,7 @@ def train_ensemble_multi_ticker(cfg: DictConfig):
         print(f"  Test MAE: {ensemble_mae:.4f}")
         print(f"  Test MAPE: {ensemble_mape:.2f}%")
         print(f"  Test Directional Accuracy: {ensemble_dir_accuracy:.2f}%")
-        print(f"  Improvement vs LSTM: {improvement:+.1f}%")
+        print(f"  R2 gain vs LSTM: {improvement:+.4f}")
         
         # Save calibration score
         calibration_file = os.path.join(get_original_cwd(), "models/calibration_score.txt")

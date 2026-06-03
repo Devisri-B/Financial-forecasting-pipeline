@@ -14,17 +14,24 @@ data:
 features:
   use_technical_indicators: true
   normalize: true
+  # Forecast target:
+  #   "volatility" -> next vol_horizon-day average |return|  (R2 ~ 0.4, dir. acc ~75%)
+  #   "return"     -> next-day log return
+  target: "volatility"
+  vol_horizon: 5
 
 model:
   architecture: "LSTMWithAttention"
-  input_dim: 12    # Will match number of features (OHLCV + Indicators)
+  input_dim: 19    # Informational only — actual value is auto-detected from the data
   hidden_dim: 128
   num_layers: 3
-  dropout: 0.05
-  learning_rate: 0.01
+  dropout: 0.2
+  learning_rate: 0.001
   epochs: 100
-  batch_size: 32
-  patience: 15     # Early stopping (best config so far)
+  batch_size: 64
+  weight_decay: 0.0001   # L2 regularization (improves generalization)
+  grad_clip: 1.0         # Gradient clipping for stable LSTM training
+  patience: 12           # Early stopping on validation loss
 
 deployment:
   onnx_path: "models/model.onnx"

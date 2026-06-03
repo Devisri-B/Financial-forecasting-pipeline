@@ -133,10 +133,8 @@ class EnsemblePredictor:
                 X_linear = X
             predictions[:, 1] = self.linear_model.predict(X_linear)
         
-        # 3. ARIMA predictions: one 1-step forecast, broadcast to all samples.
-        #    (Computing it once is correct AND avoids an O(n_samples) loop that
-        #    recomputed the identical value. np.asarray handles both the numpy-
-        #    and pandas-backed return types of statsmodels.)
+        # 3. ARIMA: a single 1-step forecast broadcast to all samples.
+        #    np.asarray handles both the numpy- and pandas-backed return types.
         if self.arima_model is not None:
             try:
                 fc = self.arima_model.get_forecast(steps=1).predicted_mean
@@ -145,50 +143,7 @@ class EnsemblePredictor:
                 predictions[:, 2] = predictions[:, 0]  # Fallback to LSTM
         else:
             predictions[:, 2] = predictions[:, 0]  # Fallback to LSTM
-        
+
         # Weighted ensemble
         ensemble_pred = predictions @ self.weights
         return ensemble_pred
-    
-    def predict_with_confidence(self, X):
-        """Return predictions + uncertainty bounds."""
-        predictions = np.zeros((len(X), 3))
-        
-        # Get all model predictions separately
-        self.lstm_model.eval()
-        with torch.no_grad():
-            X_tensor = torch.FloatTensor(X)
-            lstm_preds = self.lstm_model(X_tensor).cpu().numpy().flatten()
-        
-        if len(X.shape) == 3:
-            X_linear = np.hstack([
-                X[:, -1, :],
-                X[:, :, 0].mean(axis=1, keepdims=True),
-                X[:, :, 0].std(axis=1, keepdims=True)
-            ])
-        else:
-            X_linear = X
-        linear_preds = self.linear_model.predict(X_linear)
-        
-        predictions[:, 0] = lstm_preds
-        predictions[:, 1] = linear_preds
-        predictions[:, 2] = lstm_preds  # Use LSTM as third baseline
-        
-        # Ensemble mean
-        mean = predictions @ self.weights
-        
-        # Uncertainty = disagreement between models
-        std = predictions.std(axis=1)
-        
-        return mean, std
-
-if __name__ == "__main__":
-    # Test ensemble
-    X_dummy = np.random.randn(100, 60, 12)
-    y_dummy = np.random.randn(100)
-    
-    ensemble = EnsemblePredictor(weights=[0.4, 0.3, 0.3])
-    ensemble.fit(X_dummy, y_dummy)
-    preds = ensemble.predict(X_dummy[:10])
-    print(f"\nTest predictions shape: {preds.shape}")
-    print(f"Sample predictions: {preds[:3]}")

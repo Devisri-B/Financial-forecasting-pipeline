@@ -6,8 +6,17 @@ import structlog
 logger = structlog.get_logger()
 
 class FeatureEngineer:
-    def __init__(self, use_technical_indicators: bool = True):
+    # Forward-looking target column. It MUST be excluded from the model inputs
+    # (it peeks at the future); trainers select features as everything != this.
+    VOL_TARGET = "vol_target"
+
+    def __init__(self, use_technical_indicators: bool = True,
+                 target: str = "return", vol_horizon: int = 5):
         self.use_technical_indicators = use_technical_indicators
+        self.target = target
+        self.vol_horizon = int(vol_horizon)
+        # Name of the column the model should predict.
+        self.target_col = self.VOL_TARGET if target == "volatility" else "log_ret"
 
     def _compute_forward_indicators(self, df: pd.DataFrame) -> pd.DataFrame:
         """
@@ -79,9 +88,48 @@ class FeatureEngineer:
         if self.use_technical_indicators:
             # Compute indicators without look-ahead bias
             df = self._compute_forward_indicators(df)
+            # Strictly-causal momentum / volatility / mean-reversion features.
+            # Every column uses only data up to time t (rolling/shift look back).
+            df = self._compute_predictive_features(df)
+
+        if self.target == "volatility":
+            # Forward-looking target: log of the average |return| over the next
+            # `vol_horizon` days. It is the label only and is never a feature.
+            abs_ret = df["log_ret"].abs()
+            fwd_vol = abs_ret.rolling(self.vol_horizon).mean().shift(-(self.vol_horizon - 1))
+            df[self.VOL_TARGET] = np.log(fwd_vol + 1e-6)
 
         # Drop NaNs created by rolling windows and shifting
         df.dropna(inplace=True)
-        
+
         logger.info("Feature engineering complete", final_shape=df.shape)
+        return df
+
+    def _compute_predictive_features(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Causal momentum / volatility / mean-reversion features (no look-ahead)."""
+        df = df.copy()
+        close = df['Close']
+
+        # Multi-day momentum (cumulative log returns over k days)
+        for k in (2, 5, 10):
+            df[f'ret_{k}'] = np.log(close / close.shift(k))
+
+        # Rolling realized volatility (volatility clustering is genuinely predictable)
+        for k in (5, 10, 20):
+            df[f'vol_{k}'] = df['log_ret'].rolling(k).std()
+
+        # Volume surprise (z-score vs its own trailing window)
+        if 'Volume' in df.columns:
+            vol_mean = df['Volume'].rolling(20).mean()
+            vol_std = df['Volume'].rolling(20).std()
+            df['volume_z'] = (df['Volume'] - vol_mean) / (vol_std + 1e-9)
+
+        # Intraday range (a cheap volatility proxy)
+        if {'High', 'Low'}.issubset(df.columns):
+            df['hl_range'] = (df['High'] - df['Low']) / close
+
+        # Distance from the 20-day SMA (mean-reversion signal)
+        if 'sma_20' in df.columns:
+            df['close_sma'] = (close - df['sma_20']) / (df['sma_20'] + 1e-9)
+
         return df

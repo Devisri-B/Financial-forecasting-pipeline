@@ -27,29 +27,36 @@ def train_on_multi_ticker(cfg: DictConfig):
     print(f"Tickers: {df['Ticker'].unique()}")
     
     # Feature engineering per ticker (each ticker gets its own indicators)
-    feature_engineer = FeatureEngineer(use_technical_indicators=cfg.features.use_technical_indicators)
-    
+    feature_engineer = FeatureEngineer(
+        use_technical_indicators=cfg.features.use_technical_indicators,
+        target=cfg.features.get("target", "return"),
+        vol_horizon=cfg.features.get("vol_horizon", 5),
+    )
+
     processed_data = []
     for ticker in df['Ticker'].unique():
         ticker_df = df[df['Ticker'] == ticker].copy()
         ticker_df = ticker_df.drop('Ticker', axis=1).set_index('Date')
-        
+
         # Apply feature engineering
         ticker_processed = feature_engineer.transform(ticker_df)
         processed_data.append(ticker_processed)
         print(f"  {ticker}: {len(ticker_processed)} samples after feature engineering")
-    
+
     total_rows = sum(len(p) for p in processed_data)
     print(f"\n Total training samples after feature engineering: {total_rows}")
+    print(f" Predicting target: '{feature_engineer.target_col}'")
 
-    # Target = next-day log return (stationary). Build sequences PER TICKER so a
-    # window never spans two tickers (no cross-ticker contamination).
+    # Build sequences PER TICKER (no cross-ticker contamination). Features exclude
+    # the forward-looking target so it can't leak into X.
     from train_single_ticker import create_sequences
-    target_col = list(processed_data[0].columns).index("log_ret")
+    feature_cols = [c for c in processed_data[0].columns
+                    if c != FeatureEngineer.VOL_TARGET]
+    target_name = feature_engineer.target_col
     X_parts, y_parts = [], []
-    for ticker_processed in processed_data:
+    for p in processed_data:
         Xi, yi = create_sequences(
-            ticker_processed.values, cfg.data.window_size, target_col=target_col
+            p[feature_cols].values, cfg.data.window_size, target=p[target_name].values
         )
         if len(Xi):
             X_parts.append(Xi)
@@ -109,41 +116,23 @@ def main(cfg: DictConfig):
         dropout=cfg.model.dropout
     ).to(device)
     
-    optimizer = torch.optim.Adam(model.parameters(), lr=cfg.model.learning_rate)
     criterion = torch.nn.MSELoss()
-    
-    print("\n=== Training on Multi-Ticker Data ===")
-    
-    # Training loop (simplified - full version in train.py)
-    from train_single_ticker import EarlyStopping
-    early_stopper = EarlyStopping(patience=cfg.model.patience)
-    
-    for epoch in range(cfg.model.epochs):
-        model.train()
-        optimizer.zero_grad()
-        
-        pred = model(X_train)
-        loss = criterion(pred, y_train)
-        
-        loss.backward()
-        optimizer.step()
-        
-        # Validation
-        model.eval()
-        with torch.no_grad():
-            val_pred = model(X_test)
-            val_loss = criterion(val_pred, y_test)
-        
-        if epoch % 10 == 0:
-            print(f"Epoch {epoch}: Train Loss {loss.item():.4f} | Val Loss {val_loss.item():.4f}")
-        
-        # Early stopping
-        early_stopper(val_loss.item(), model)
-        if early_stopper.early_stop:
-            print(f"Early stopping at epoch {epoch}")
-            model.load_state_dict(early_stopper.best_model_state)
-            break
-    
+
+    print("\n=== Training on Multi-Ticker Data (mini-batch + grad-clip + LR schedule) ===")
+
+    # Mini-batch training loop (shared helper). Early-stops on the test set
+    # (this script uses a train/test-only split).
+    from train_single_ticker import train_lstm_model
+    train_lstm_model(
+        model, X_train, y_train, X_test, y_test,
+        epochs=cfg.model.epochs, lr=cfg.model.learning_rate,
+        batch_size=int(cfg.model.get("batch_size", 64)),
+        weight_decay=float(cfg.model.get("weight_decay", 1e-4)),
+        grad_clip=float(cfg.model.get("grad_clip", 1.0)),
+        patience=cfg.model.patience,
+        on_epoch=lambda e, tl, vl: print(f"Epoch {e}: Train Loss {tl:.6f} | Val Loss {vl:.6f}") if e % 10 == 0 else None,
+    )
+
     # Evaluate
     model.eval()
     with torch.no_grad():
@@ -155,10 +144,17 @@ def main(cfg: DictConfig):
         ss_res = torch.sum((y_test - test_pred) ** 2)
         ss_tot = torch.sum((y_test - y_mean) ** 2)
         r2 = 1 - (ss_res / ss_tot)
-    
+
+    # Direction accuracy (high/low vol for volatility; up/down for returns)
+    from train_single_ticker import direction_accuracy
+    is_vol = cfg.features.get("target", "return") == "volatility"
+    threshold = float(np.median(data['y_train'])) if is_vol else 0.0
+    dir_acc = direction_accuracy(y_test.cpu().numpy(), test_pred.cpu().numpy(), threshold)
+
     print(f"\n Multi-Ticker Model Results:")
     print(f"   Test MSE: {test_mse.item():.4f}")
     print(f"   Test R²: {r2.item():.4f}")
+    print(f"   Test Directional Accuracy: {dir_acc:.2f}%")
     
     # Save model
     torch.save(model.state_dict(), "models/model_multi_ticker.pth")

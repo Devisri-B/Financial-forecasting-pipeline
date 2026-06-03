@@ -52,21 +52,82 @@ def set_seeds(seed: int):
     torch.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
 
-def create_sequences(data, seq_length, target_col=0):
-    """Build (X, y) sliding-window sequences.
+def create_sequences(data, seq_length, target):
+    """Build sliding-window sequences.
 
-    target_col selects which column to forecast. For honest financial
-    forecasting this should point at a *stationary* target (log returns),
-    NOT the raw price level: raw prices are almost perfectly autocorrelated
-    (tomorrow ~= today), so predicting them yields a meaningless R2 ~ 0.99.
+    X = data[i : i+seq_length] (the feature window), y = target[i+seq_length].
+    `target` is a separate 1-D array aligned row-for-row with `data`, so a
+    forward-looking label (e.g. future volatility) is never included in X.
     """
     xs, ys = [], []
     for i in range(len(data) - seq_length):
-        x = data[i:(i + seq_length)]
-        y = data[i + seq_length][target_col]
-        xs.append(x)
-        ys.append(y)
+        xs.append(data[i:(i + seq_length)])
+        ys.append(target[i + seq_length])
     return np.array(xs), np.array(ys)
+
+
+def direction_accuracy(y_true, y_pred, threshold=0.0):
+    """Fraction (%) of points where prediction and actual fall on the same side
+    of `threshold`. For volatility use threshold = median of TRAIN targets
+    (high- vs low-volatility hit rate); for returns use 0.0 (up vs down)."""
+    yt = np.asarray(y_true).ravel()
+    yp = np.asarray(y_pred).ravel()
+    return float(np.mean((yp > threshold) == (yt > threshold))) * 100
+
+
+def train_lstm_model(model, X_train, y_train, X_val, y_val, *, epochs, lr,
+                     batch_size=64, weight_decay=1e-4, grad_clip=1.0,
+                     patience=10, on_epoch=None):
+    """Mini-batch training loop for the LSTM.
+
+    Uses per-epoch shuffling, gradient clipping, a ReduceLROnPlateau scheduler,
+    weight decay, and early stopping (best weights restored on exit).
+
+    on_epoch(epoch, train_loss, val_loss) is invoked each epoch (e.g. for MLflow).
+    Returns (train_loss_history, val_loss_history).
+    """
+    optimizer = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+        optimizer, factor=0.5, patience=max(2, patience // 3)
+    )
+    criterion = nn.MSELoss()
+    stopper = EarlyStopping(patience=patience, min_delta=1e-6)
+
+    n = X_train.shape[0]
+    train_hist, val_hist = [], []
+    for epoch in range(epochs):
+        model.train()
+        perm = torch.randperm(n)
+        running, n_batches = 0.0, 0
+        for start in range(0, n, batch_size):
+            idx = perm[start:start + batch_size]
+            optimizer.zero_grad()
+            loss = criterion(model(X_train[idx]), y_train[idx])
+            loss.backward()
+            if grad_clip:
+                nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
+            optimizer.step()
+            running += loss.item()
+            n_batches += 1
+        train_loss = running / max(1, n_batches)
+
+        model.eval()
+        with torch.no_grad():
+            val_loss = criterion(model(X_val), y_val).item()
+        scheduler.step(val_loss)
+
+        train_hist.append(train_loss)
+        val_hist.append(val_loss)
+        if on_epoch is not None:
+            on_epoch(epoch, train_loss, val_loss)
+
+        stopper(val_loss, model)
+        if stopper.early_stop:
+            break
+
+    if stopper.best_model_state is not None:
+        model.load_state_dict(stopper.best_model_state)
+    return train_hist, val_hist
 
 @hydra.main(config_path="../config", config_name="main", version_base=None)
 def train_pipeline(cfg: DictConfig):
@@ -122,7 +183,11 @@ def train_pipeline(cfg: DictConfig):
 
         # 1. Load & Process
         df = pd.read_csv(cfg.data.raw_path, index_col=0)
-        engineer = FeatureEngineer(cfg.features.use_technical_indicators)
+        engineer = FeatureEngineer(
+            cfg.features.use_technical_indicators,
+            target=cfg.features.get("target", "return"),
+            vol_horizon=cfg.features.get("vol_horizon", 5),
+        )
         df_processed = engineer.transform(df)
         
         os.makedirs(os.path.dirname(cfg.data.reference_path), exist_ok=True)
@@ -130,14 +195,19 @@ def train_pipeline(cfg: DictConfig):
         os.makedirs(os.path.dirname(cfg.data.processed_path), exist_ok=True)
         df_processed.to_csv(cfg.data.processed_path)
         
-        # 2. Pick a STATIONARY target: predict next-day log return, not raw price.
-        #    Predicting the raw price gives a fake R2 ~ 0.99 because prices are
-        #    almost perfectly autocorrelated. Returns are the honest target.
-        target_col = df_processed.columns.get_loc("log_ret")
-        data_values = df_processed.values
+        # 2. Target column. "volatility" = next vol_horizon-day average |return|;
+        #    "return" = next-day log return. The forward-looking target column is
+        #    excluded from the feature matrix so it cannot leak into the inputs.
+        target_name = engineer.target_col
+        feature_cols = [c for c in df_processed.columns if c != FeatureEngineer.VOL_TARGET]
+        data_values = df_processed[feature_cols].values
+        target_values = df_processed[target_name].values
+        print(f"Predicting target: '{target_name}'")
 
-        # 3. Create Sequences on RAW values, THEN split chronologically.
-        X_all, y_all = create_sequences(data_values, cfg.data.window_size, target_col=target_col)
+        # 3. Create Sequences, THEN split chronologically.
+        X_all, y_all = create_sequences(
+            data_values, cfg.data.window_size, target=target_values
+        )
 
         train_size = int(len(X_all) * (1 - cfg.data.test_size))
         X_train_raw, X_test_raw = X_all[:train_size], X_all[train_size:]
@@ -153,9 +223,13 @@ def train_pipeline(cfg: DictConfig):
         os.makedirs("models", exist_ok=True)
         joblib.dump(scaler, "models/scaler.pkl")
 
-        # Naive baseline: predict "no change" (return = 0). An honest model must
-        # beat this. For prices a naive baseline scores R2 ~ 0.99; for returns ~ 0.
-        naive_rmse = float(np.sqrt(np.mean(y_test ** 2)))
+        # Naive baseline = predict the TRAIN mean of the target (exactly the
+        # baseline that R2 measures against; the model should beat it).
+        is_volatility = (engineer.target == "volatility")
+        train_mean = float(np.mean(y_train))
+        naive_rmse = float(np.sqrt(np.mean((y_test - train_mean) ** 2)))
+        # Threshold for direction accuracy: median train vol (high/low) or 0 (up/down).
+        dir_threshold = float(np.median(y_train)) if is_volatility else 0.0
 
         mlflow.log_params({
             "train_size": len(X_train),
@@ -171,60 +245,35 @@ def train_pipeline(cfg: DictConfig):
         input_dim = X_train.shape[2]
         model = StockPredictor(input_dim, cfg.model.hidden_dim, cfg.model.num_layers, dropout=cfg.model.dropout).to(device)
         
-        optimizer = torch.optim.Adam(model.parameters(), lr=cfg.model.learning_rate)
+        batch_size = int(cfg.model.get("batch_size", 64))
+        weight_decay = float(cfg.model.get("weight_decay", 1e-4))
+        grad_clip = float(cfg.model.get("grad_clip", 1.0))
 
         # Log optimizer details
         mlflow.log_params({
             "optimizer": "adam",
-            "optimizer_betas": list(optimizer.defaults.get("betas")),
-            "optimizer_weight_decay": optimizer.defaults.get("weight_decay"),
+            "batch_size": batch_size,
+            "weight_decay": weight_decay,
+            "grad_clip": grad_clip,
+            "lr_scheduler": "ReduceLROnPlateau",
         })
-        
-        # Use Mean Squared Error Loss for stable training
-        # This forces the model to actually learn patterns instead of high uncertainty
+
+        # MSELoss kept for the evaluation block below.
         criterion = nn.MSELoss()
-        
-        # Initialize Early Stopping using the configured patience
-        early_stopper = EarlyStopping(patience=cfg.model.patience, min_delta=0.001)
 
-        train_loss_history, val_loss_history = [], []
+        # 5. Training (mini-batch loop; see train_lstm_model docstring).
+        # NOTE: with no dedicated validation split, early stopping uses the test
+        # set here; the multi-ticker pipelines use a separate validation set.
+        def _log_epoch(epoch, train_loss, val_loss):
+            print(f"Epoch {epoch}: Train Loss {train_loss:.6f} | Val Loss {val_loss:.6f}")
+            mlflow.log_metrics({"train_loss": train_loss, "val_loss": val_loss}, step=epoch)
 
-        # 5. Training Loop
-        for epoch in range(cfg.model.epochs):
-            model.train()
-            optimizer.zero_grad()
-            
-            # Forward pass returns prediction
-            pred = model(X_train)
-            loss = criterion(pred, y_train)
-            
-            loss.backward()
-            optimizer.step()
-            
-            # Validation Step (for Early Stopping)
-            model.eval()
-            with torch.no_grad():
-                val_pred = model(X_test)
-                val_loss = criterion(val_pred, y_test)
-            
-            train_loss_history.append(loss.item())
-            val_loss_history.append(val_loss.item())
-
-            print(f"Epoch {epoch}: Train Loss {loss.item():.4f} | Val Loss {val_loss.item():.4f}")
-            
-            # Log Loss per Epoch 
-            mlflow.log_metrics({"train_loss": loss.item(), "val_loss": val_loss.item()}, step=epoch)
-            
-            # Check Early Stopping
-            early_stopper(val_loss.item(), model)
-            if early_stopper.early_stop:
-                print(f"Early stopping triggered at epoch {epoch}")
-                model.load_state_dict(early_stopper.best_model_state)
-                break
-        
-        # Ensure we load the best weights if we finished loops without stopping
-        if not early_stopper.early_stop and early_stopper.best_model_state:
-            model.load_state_dict(early_stopper.best_model_state)
+        train_loss_history, val_loss_history = train_lstm_model(
+            model, X_train, y_train, X_test, y_test,
+            epochs=cfg.model.epochs, lr=cfg.model.learning_rate,
+            batch_size=batch_size, weight_decay=weight_decay, grad_clip=grad_clip,
+            patience=cfg.model.patience, on_epoch=_log_epoch,
+        )
 
         # 6. Evaluation with Comprehensive Metrics
         model.eval()
@@ -267,13 +316,13 @@ def train_pipeline(cfg: DictConfig):
             _ = model(X_test[:1])
         inference_ms = (time.perf_counter() - start_inf) * 1000
 
-        # Directional accuracy: did we predict the sign of the return correctly?
-        # This is the meaningful metric for return forecasting (50% = coin flip).
-        pred_dir = (pred.detach().cpu().numpy().flatten() > 0)
-        true_dir = (y_test.detach().cpu().numpy().flatten() > 0)
-        directional_accuracy = float(np.mean(pred_dir == true_dir)) * 100
+        # Direction accuracy: high-vs-low volatility (or up/down for returns),
+        # measured against the train-derived threshold. ~50% = no skill.
+        pred_np = pred.detach().cpu().numpy().flatten()
+        y_test_np_ = y_test.detach().cpu().numpy().flatten()
+        directional_accuracy = direction_accuracy(y_test_np_, pred_np, dir_threshold)
 
-        # Skill vs naive "predict zero return" baseline. Positive => model adds value.
+        # Skill vs the naive (predict-train-mean) baseline. Positive => model adds value.
         skill_vs_naive = 1.0 - (rmse.item() / (naive_rmse + 1e-12))
 
         mlflow.log_metrics({
@@ -292,12 +341,12 @@ def train_pipeline(cfg: DictConfig):
         })
 
         print(
-            f"\n=== Honest test metrics (target = next-day log return) ===\n"
-            f"  R2:                  {r_squared.item():.4f}   (<= 0 means no better than predicting the mean)\n"
+            f"\n=== Test metrics (target = '{target_name}') ===\n"
+            f"  R2:                  {r_squared.item():.4f}\n"
             f"  RMSE:                {rmse.item():.6f}\n"
-            f"  Naive RMSE (zero):   {naive_rmse:.6f}\n"
-            f"  Skill vs naive:      {skill_vs_naive:+.4f}   (negative => worse than 'no change')\n"
-            f"  Directional accuracy:{directional_accuracy:.2f}%   (~50% = coin flip)\n"
+            f"  Naive RMSE (mean):   {naive_rmse:.6f}\n"
+            f"  Skill vs naive:      {skill_vs_naive:+.4f}\n"
+            f"  Directional accuracy:{directional_accuracy:.2f}%\n"
         )
         
         # Save calibration metrics. Keep a header on line 0 so the API
@@ -349,18 +398,19 @@ def train_pipeline(cfg: DictConfig):
         plt.savefig(loss_plot_path, dpi=100, bbox_inches='tight')
         plt.close()
 
-        # Target is the (unscaled) next-day log return, so we plot it directly.
+        # Target is the (unscaled) stationary label, so we plot it directly.
         # No inverse transform needed: the scaler was fit on FEATURES only.
         y_test_np = y_test.detach().cpu().numpy().flatten()
         pred_np = pred.detach().cpu().numpy().flatten()
+        target_label = "Log Volatility" if is_volatility else "Log Return"
 
         plt.figure(figsize=(12, 6))
         plt.plot(y_test_np, label="Actual", linewidth=2, alpha=0.8)
         plt.plot(pred_np, label="Predicted", linewidth=2, alpha=0.8)
         plt.xlabel("Time Step")
-        plt.ylabel("Log Return")
+        plt.ylabel(target_label)
         plt.legend()
-        plt.title("Prediction vs Actual (Next-Day Log Return)")
+        plt.title(f"Prediction vs Actual ({target_label})")
         plt.grid(True, alpha=0.3)
         pred_plot_path = os.path.join(artifacts_dir, "pred_vs_actual.png")
         plt.savefig(pred_plot_path, dpi=100, bbox_inches='tight')

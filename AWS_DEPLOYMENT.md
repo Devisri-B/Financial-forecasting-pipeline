@@ -95,7 +95,7 @@ git push origin main
 
 # GitHub Actions will:
 # 1. Download 4 ETFs (SPY, QQQ, DIA, IWM)
-# 2. Train ensemble (R²=0.9986)
+# 2. Train ensemble (volatility target)
 # 3. Export to ONNX
 # 4. Build Docker image
 # 5. Deploy to Lambda
@@ -220,7 +220,7 @@ jobs:
     steps:
       # 1. Train model with latest data
       - python src/multi_ticker_loader.py  # Download fresh ETF data
-      - python src/train_ensemble_multi.py  # Train ensemble (R²=0.9986)
+      - python src/train_ensemble_multi.py  # Train ensemble (volatility target)
       
       # 2. Build Docker image for x86_64
       - docker build --platform linux/amd64 -t image .
@@ -342,4 +342,4 @@ See `MLFLOW_SHOWCASE.md` for detailed screenshots showing:
 
 **Status**:  Production-ready  
 **Cost**: ~$0.35/month for 100 daily predictions  
-**Model R²**: 0.9826 (LSTM), 0.9986 (Ensemble)
+**Model (volatility target)**: Test R² ≈ 0.38, directional accuracy ≈ 75% (ensemble)
